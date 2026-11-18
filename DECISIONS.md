@@ -15,3 +15,6 @@
 - Built-in dictation counts as failed (and the app switches to the keyboard-mic hint for the rest of the session) on not-allowed, service-not-allowed, audio-capture or network errors, a start() exception, or no start within 4 seconds.
 - screenshots/ is gitignored, so it stays local and isn't deployed.
 - Smoke test simulates "dictation unavailable" by setting `srBroken=true`, because headless browsers can't exercise a real microphone.
+- [[links]] and backlinks appear in a card under the note (a plain textarea can't hold clickable inline links). A link to a missing title offers "+ Create".
+- "What I learned" is the Learning view itself, renamed and grouped by the week each note was created (weeks start Monday).
+- Birthdays (next 30 days) on the Reminders view already existed. Verified by the smoke test, no change needed.

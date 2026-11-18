@@ -96,7 +96,7 @@ mark{background:rgba(255,214,10,.5);color:inherit;border-radius:3px}
 .mic.live{background:var(--red);animation:pulse 1.4s ease-in-out infinite}
 @keyframes pulse{0%,100%{box-shadow:0 0 0 0 rgba(255,59,48,.45)}50%{box-shadow:0 0 0 8px rgba(255,59,48,0)}}
 .scroll{flex:1;overflow:auto;padding:22px 28px 120px;display:flex;flex-direction:column}
-#ta{width:100%;flex:1;min-height:55vh;border:0;outline:0;background:none;resize:none;font-size:17px;line-height:1.5;caret-color:var(--blue)}
+#ta{width:100%;flex:1;min-height:40vh;border:0;outline:0;background:none;resize:none;font-size:17px;line-height:1.5;caret-color:var(--blue)}
 #ta::placeholder{color:var(--text3)}
 .meta{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:14px;color:var(--text2);font-size:13px}
 .rem{display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:10px 12px;border-radius:12px;background:var(--bg2);margin-bottom:14px}
@@ -153,7 +153,8 @@ td.ti{font-weight:600;max-width:320px;overflow:hidden;text-overflow:ellipsis;whi
 .sugg{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
 .sugg button{padding:4px 11px;border-radius:14px;background:var(--bg);color:var(--blue);font-size:13px;font-weight:500}
 .card textarea{width:100%;min-height:90px;border:0;background:var(--bg);border-radius:10px;padding:10px;outline:0;resize:vertical;line-height:1.45}
-.mention{display:block;width:100%;text-align:left;padding:6px 0;color:var(--blue)}
+.mention{display:block;width:100%;text-align:left;padding:8px 0;color:var(--blue);min-height:36px}
+.card.links{margin-top:18px} .mention.newlink{color:var(--text2)}
 .brow{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
 .bnote{margin-top:8px;color:var(--text2);font-size:13px}
 .bnote button{color:var(--blue);font-weight:500;margin-left:6px}
@@ -294,7 +295,7 @@ const hl=(s,q)=>{s=esc(s);const ws=q.trim().split(/\s+/).filter(w=>w.length>1);i
   return s.replace(new RegExp("("+ws.map(w=>w.replace(/[.*+?^${}()|[\]\\]/g,"\\$&")).join("|")+")","gi"),"<mark>$1</mark>")};
 
 /* ---------- render: sidebar / chips ---------- */
-const VIEWS=[["all","All Notes","all","#8e8e93"],["reminders","Reminders","bell","#ff3b30"],["idea","Ideas","bulb","#ff9500"],["learning","Learning","book","#af52de"],["task","Tasks","check","#34c759"],["people","People","person","#ff2d55"],["pinned","Pinned","pin","#007aff"],["db","Database","db","#5856d6"]];
+const VIEWS=[["all","All Notes","all","#8e8e93"],["reminders","Reminders","bell","#ff3b30"],["idea","Ideas","bulb","#ff9500"],["learning","What I learned","book","#af52de"],["task","Tasks","check","#34c759"],["people","People","person","#ff2d55"],["pinned","Pinned","pin","#007aff"],["db","Database","db","#5856d6"]];
 function count(v){const a=S.notes;
   if(v==="all")return a.length; if(v==="reminders")return a.filter(isDue).length; if(v==="pinned")return a.filter(n=>n.pinned).length;
   if(v==="db")return a.length; if(v==="people")return S.people.length; return a.filter(n=>n.type===v).length}
@@ -321,6 +322,11 @@ function renderList(){
     const tmEnd=new Date();tmEnd.setHours(24,0,0,0);
     const groups=[["Overdue",a.filter(isLate),"late"],["Today",a.filter(n=>!isLate(n)&&n.reminder.at<+tmEnd)],["Upcoming",a.filter(n=>n.reminder.at>=+tmEnd)]];
     groups.forEach(([g,list,c])=>{if(list.length)html+=`<div class="grp ${c||""}">${g}</div>`+list.map(n=>row(n,q)).join("")});html+=bdHtml;
+  }else if(S.view==="learning"&&!S.tag){
+    const ws=+weekStart(Date.now()),groups=new Map();
+    a.slice().sort((x,y)=>y.created-x.created).forEach(n=>{const k=+weekStart(n.created);if(!groups.has(k))groups.set(k,[]);groups.get(k).push(n)});
+    groups.forEach((list,k)=>{const lbl=k===ws?"This week":k===ws-7*864e5?"Last week":"Week of "+new Date(k).toLocaleDateString([],{month:"short",day:"numeric",year:new Date(k).getFullYear()===new Date().getFullYear()?undefined:"numeric"});
+      html+=`<div class="grp">${lbl} · ${list.length} learned</div>`+list.map(n=>row(n,q)).join("")});
   }else html=a.map(n=>row(n,q)).join("");
   $("#items").innerHTML=html;
 }
@@ -427,12 +433,13 @@ function renderEditor(){
     <div class="kbhint" id="kbHint" ${S.kbHint?"":"hidden"}>${ICON.mic}<span>${KB_HINT} It works even when built-in dictation doesn’t.</span><button id="kbX" aria-label="Dismiss">×</button></div>
     <div id="remBox"></div>
     <textarea id="ta" placeholder="Start typing or tap Dictate. Mention a date like “call Sam tomorrow at 3pm” and I’ll set the reminder." spellcheck="true"></textarea>
+    <div id="linkBox"></div>
     <div class="meta" id="metaRow" style="margin:14px 0 0"></div>
   </div>
   <div class="live-strip ${S.listening?"on":""}" id="strip"><i class="dot"></i><span id="interim">Listening…</span></div>`;
   const ta=$("#ta");ta.value=n.body;
   ta.addEventListener("input",()=>onEdit(ta.value));
-  paintRem();paintMeta();
+  paintRem();paintMeta();paintLinks();
 }
 function paintRem(){
   const n=byId(S.sel);if(!n)return;const r=n.reminder,box=$("#remBox");if(!box)return;
@@ -453,6 +460,14 @@ const flag=(k,v)=>{try{if(v===undefined)return localStorage.getItem(k);localStor
 function calHintHTML(){return flag("recall.calHint")?"":`<div class="calhint" id="calHint"><b>Want an alert even when Recall is closed?</b> Recall can only remind you while it’s open. Tap <b>Add to Calendar</b> and your phone’s Calendar will alert you, guaranteed.<button id="calHintOk">Got it</button></div>`}
 function dismissCalHint(){flag("recall.calHint","1");const h=$("#calHint");if(h)h.remove()}
 function setRem(at,auto){const n=byId(S.sel);n.reminder={at,auto,done:false,notified:false};if(!auto)n.noAuto=false;save(n);paintRem();refresh(true);askNotif();toast("Reminder set for "+fmtWhen(at))}
+/* [[Note title]] links: outgoing links and backlinks, shown under the note. */
+const noteByTitle=t=>{t=t.toLowerCase();return S.notes.find(n=>titleOf(n).toLowerCase()===t)};
+function paintLinks(){const n=byId(S.sel),el=$("#linkBox");if(!n||!el)return;
+  const out=linksOf(n.body),me=titleOf(n).toLowerCase();
+  const back=S.notes.filter(m=>m.id!==n.id&&linksOf(m.body).some(t=>t.toLowerCase()===me));
+  if(!out.length&&!back.length){el.innerHTML="";return}
+  const outH=out.map(t=>{const m=noteByTitle(t);return m&&m.id!==n.id?`<button class="mention" data-mention="${m.id}">${esc(titleOf(m))}</button>`:m?"":`<button class="mention newlink" data-newlink="${esc(t)}">+ Create “${esc(t)}”</button>`}).join("");
+  el.innerHTML=`<div class="card links">${outH?`<div class="ctitle">Links</div>${outH}`:""}${back.length?`<div class="ctitle" ${outH?'style="margin-top:12px"':""}>Linked from</div>${back.map(m=>`<button class="mention" data-mention="${m.id}">${esc(titleOf(m))}</button>`).join("")}`:""}</div>`}
 function paintMeta(){const n=byId(S.sel),el=$("#metaRow");if(!n||!el)return;
   const w=(n.body.trim().match(/\S+/g)||[]).length;
   el.innerHTML=`<span>${w} word${w===1?"":"s"}</span><span>·</span><span>Edited ${new Date(n.updated).toLocaleString([],{month:"short",day:"numeric",hour:"numeric",minute:"2-digit"})}</span>${n.tags.map(t=>`<span class="pill">#${esc(t)}</span>`).join("")}`}
@@ -486,7 +501,7 @@ function onEdit(v){
   clearTimeout(saveT);saveT=setTimeout(()=>dbPut(n),250);
   if((n.reminder?n.reminder.at:null)!==had){paintRem();if(n.reminder&&!hadDone)askNotif()}
   const seg=$("#seg");if(seg)seg.querySelectorAll("button").forEach(b=>b.classList.toggle("on",b.dataset.type===n.type));
-  paintMeta();refresh(true);
+  paintMeta();paintLinks();refresh(true);
   clearTimeout(exT);exT=setTimeout(()=>extractPeople(n),1800);
 }
 let exT;
@@ -597,11 +612,12 @@ function toast(msg,undo,ms){const t=$("#toast");t.innerHTML=esc(msg)+(undo?`<but
 
 /* ---------- events ---------- */
 document.addEventListener("click",e=>{
-  const t=e.target.closest("[data-view],[data-tag],[data-id],[data-pid],[data-mention],[data-fdel],[data-fadd],#pdel,#pcal,[data-done],[data-type],[data-k],#back,#mic,#pin,#del,#kbX,#calHintOk,[data-cal],#exJson,#exCsv,#imp,#dbBack");if(!t)return;
+  const t=e.target.closest("[data-view],[data-tag],[data-id],[data-pid],[data-mention],[data-newlink],[data-fdel],[data-fadd],#pdel,#pcal,[data-done],[data-type],[data-k],#back,#mic,#pin,#del,#kbX,#calHintOk,[data-cal],#exJson,#exCsv,#imp,#dbBack");if(!t)return;
   if(t.dataset.cal){e.stopPropagation();const n=byId(t.dataset.cal);if(n&&n.reminder){dismissCalHint();downloadICS(n)}return}
   if(t.dataset.done){e.stopPropagation();const n=byId(t.dataset.done);n.reminder.done=!n.reminder.done;n.reminder.notified=n.reminder.done;save(n);refresh(true);return}
   if(t.dataset.pid){openPerson(t.dataset.pid);return}
   if(t.dataset.mention){setView("all");open(t.dataset.mention);return}
+  if(t.dataset.newlink){const cur=byId(S.sel);if(cur)extractPeople(cur);create(t.dataset.newlink+"\n");const ta=$("#ta");if(ta){ta.focus();ta.setSelectionRange(ta.value.length,ta.value.length)}return}
   if(t.dataset.fdel!==undefined){const p=pById(S.selP);p.favorites.splice(+t.dataset.fdel,1);pSave(p);paintFavs();return}
   if(t.dataset.fadd!==undefined){const p=pById(S.selP);p.favorites.push({k:t.dataset.fadd,v:""});pSave(p,false);paintFavs();const rows=document.querySelectorAll("[data-fv]");const target=t.dataset.fadd?rows[rows.length-1]:document.querySelectorAll("[data-fk]")[rows.length-1];target&&target.focus();return}
   if(t.dataset.view){setView(t.dataset.view);return}

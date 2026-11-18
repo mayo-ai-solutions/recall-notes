@@ -155,6 +155,32 @@ def run(p, engine, w, h, scheme):
         shot("6-capture-fallback")
     check("Capture focuses text area; keyboard-mic fallback", capture_fallback)
 
+    def links():
+        nav("all"); page.click("#newBtn"); page.fill("#ta", "Trip plan\nPack light.")
+        if mobile: page.click("#back")
+        page.click("#newBtn"); page.fill("#ta", "Packing list\nSee [[Trip plan]] and [[Budget sheet]]")
+        expect(page.locator("#linkBox [data-mention]", has_text="Trip plan")).to_have_count(1)
+        expect(page.locator("#linkBox [data-newlink]")).to_contain_text("Budget sheet")
+        shot("7-links")
+        page.locator("#linkBox [data-mention]", has_text="Trip plan").click()
+        expect(page.locator("#ta")).to_have_value("Trip plan\nPack light.")
+        expect(page.locator("#linkBox")).to_contain_text("Linked from")
+        expect(page.locator("#linkBox [data-mention]", has_text="Packing list")).to_have_count(1)
+        page.locator("#linkBox [data-mention]", has_text="Packing list").click()
+        page.click("#linkBox [data-newlink]")
+        expect(page.locator("#ta")).to_have_value("Budget sheet\n")
+        assert page.evaluate("S.notes.filter(n=>n.body.startsWith('Budget sheet')).length") == 1
+    check("[[links]], backlinks, create-from-link", links)
+
+    def learned():
+        page.evaluate("""(async()=>{const old=newNote('Learned: old lesson about tides');old.created=Date.now()-21*864e5;S.notes.push(old);await dbPut(old)})()""")
+        nav("learning")
+        expect(page.locator("#ltitle")).to_have_text("What I learned")
+        expect(page.locator("#items .grp").first).to_contain_text("This week")
+        expect(page.locator("#items .grp", has_text="Week of")).to_have_count(1)
+        shot("8-learned")
+    check("What I learned grouped by week", learned)
+
     def no_overflow():
         for v in ["all", "reminders", "people", "db"]:
             nav(v); page.wait_for_timeout(100)

@@ -7,5 +7,6 @@
   - Bugs fixed: debounced save could resurrect a deleted note/person; "5 amazing ideas" read as 5am; "1/2 cup" read as Jan 2;
     "Remember Maya's..." created "Remember Maya"; same first name created duplicates; dark-mode toast unreadable;
     toast covered Capture on phones; birthday month dropdown misaligned; iOS-only paths for calendar/export/notifications.
-- [ ] Phase 2: deploy
-- [ ] Phase 3
+- [x] Phase 2: deployed to GitHub Pages: https://mayo-ai-solutions.github.io/recall-notes/ (/, manifest, sw.js, lib.js, icons all HTTP 200; loads with no console errors in chromium + webkit, service worker active)
+- [x] Phase 3: [[links]] + backlinks, weekly "What I learned" view, Birthdays-on-Reminders verified, NEXT_STEPS.md written
+  - smoke test now 128 checks, all passing
