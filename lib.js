@@ -124,6 +124,45 @@ const linksOf = b => [...new Set((String(b).match(/\[\[([^\[\]\n]{1,120})\]\]/g)
 /* Monday 00:00 of the week containing ms (local time) */
 function weekStart(ms) { const d = new Date(ms); d.setHours(0, 0, 0, 0); d.setDate(d.getDate() - ((d.getDay() + 6) % 7)); return d; }
 
-const L = { MON, DAYN, parseWhen, stripBirthdays, parseMonthDay, extractFacts, cleanName, tagsOf, guessType, linksOf, weekStart };
+/* ---------- journal helpers ---------- */
+const JOURNAL_PROMPTS = [
+  "What went well today? What drained you?",
+  "What are you grateful for today?",
+  "What is one thing you want to remember about today?",
+  "What did you learn today?",
+  "What is on your mind right now?",
+  "What would make tomorrow a good day?",
+  "Who made a difference to you today, and how?",
+  "What is something small you are proud of?",
+  "What did you avoid today, and why?",
+  "What do you need more of this week? Less of?",
+  "What surprised you today?",
+  "What are you looking forward to?"
+];
+/* The same prompt all day, a different one each day. */
+function promptFor(dateKey) {
+  let h = 0; for (const c of String(dateKey)) h = (h * 31 + c.charCodeAt(0)) >>> 0;
+  return JOURNAL_PROMPTS[h % JOURNAL_PROMPTS.length];
+}
+const keyOf = d => d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0");
+const fromKey = k => { const [y, m, d] = String(k).split("-").map(Number); return new Date(y, m - 1, d); };
+const shiftKey = (k, days) => { const d = fromKey(k); d.setDate(d.getDate() + days); return keyOf(d); };
+/* Days in a row with an entry, ending today. If today has none yet, a streak that ran through yesterday still counts. */
+function journalStreak(keys, todayKey) {
+  const have = new Set(keys); let k = have.has(todayKey) ? todayKey : shiftKey(todayKey, -1), n = 0;
+  while (have.has(k)) { n++; k = shiftKey(k, -1); }
+  return n;
+}
+/* Weeks (Sunday first) for a month; days outside the month are null. month is 0-11. */
+function monthGrid(year, month) {
+  const first = new Date(year, month, 1), days = new Date(year, month + 1, 0).getDate();
+  const cells = Array(first.getDay()).fill(null);
+  for (let d = 1; d <= days; d++) cells.push(d);
+  while (cells.length % 7) cells.push(null);
+  const weeks = []; for (let i = 0; i < cells.length; i += 7) weeks.push(cells.slice(i, i + 7));
+  return weeks;
+}
+
+const L = { JOURNAL_PROMPTS, promptFor, journalStreak, monthGrid, keyOf, fromKey, shiftKey, MON, DAYN, parseWhen, stripBirthdays, parseMonthDay, extractFacts, cleanName, tagsOf, guessType, linksOf, weekStart };
 if (typeof module !== "undefined" && module.exports) module.exports = L; else root.RecallLib = L;
 })(typeof self !== "undefined" ? self : this);

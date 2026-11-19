@@ -46,5 +46,5 @@ function appendText(t){const ta=$("#ta");if(!ta)return;t=t.trim();if(!t)return;
 ACT.mic=()=>{S.listening?stopDictation():startDictation()};
 ACT.fab=()=>{
   if(S.listening){stopDictation();return}
-  create("",S.tab==="journal"?journalOpts():{});const ta=$("#ta");if(ta)ta.focus();startDictation();
+  if(S.tab==="journal")openTodayJournal();else create("");const ta=$("#ta");if(ta)ta.focus();startDictation();
 };

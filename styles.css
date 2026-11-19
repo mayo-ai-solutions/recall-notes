@@ -224,6 +224,13 @@ td.ti{font-weight:600;max-width:20rem;overflow:hidden;text-overflow:ellipsis;whi
 .prompt{font-family:var(--font-head);font-size:1.1rem;line-height:1.35;color:var(--text)}
 .today{width:100%;text-align:left;padding:1rem;border-radius:var(--r);background:var(--charcoal);color:var(--paper);display:flex;gap:.8rem;align-items:center;margin:.2rem 0 .6rem;min-height:4rem}
 .today svg{color:var(--amber)} .today b{display:block;font-family:var(--font-head)} .today small{color:#B4B8C2}
+.cal{display:grid;grid-template-columns:repeat(7,1fr);gap:.25rem}
+.cal .dow{text-align:center;font-size:.75rem;font-weight:600;color:var(--text2);padding:.2rem 0}
+.day{min-height:2.75rem;border-radius:.7rem;background:var(--surface);border:1px solid var(--line);position:relative;font-weight:600}
+.day.has{background:var(--sel)} .day.today{outline:2px solid var(--focus);outline-offset:-2px}
+.day:disabled{opacity:.4;cursor:default}
+.day .dot{position:absolute;bottom:.3rem;left:50%;width:.4rem;height:.4rem;margin-left:-.2rem;border-radius:50%;background:var(--accent-text)}
+.today{border:1px solid var(--line)}
 .priv{display:inline-flex;align-items:center;gap:.3rem;font-size:.75rem;font-weight:700;color:var(--c-journal)}
 
 /* ---------- follow-ups, suggestions, check-in threads ---------- */

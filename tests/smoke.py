@@ -207,6 +207,57 @@ def run(p, engine, w, h, scheme):
         expect(page.locator("#ta")).to_have_value("Budget sheet\n")
     check("[[links]], backlinks, create-from-link", links)
 
+    # ------------------------------------------------------------------ stage 3: journaling
+    def journal_flow():
+        nav("journal")
+        expect(page.locator("#items")).to_contain_text("Write or speak today")
+        page.click("[data-act=jToday]")
+        expect(page.locator("#topBox")).to_contain_text("Private")
+        expect(page.locator("#topBox .mood button")).to_have_count(5)
+        expect(page.locator("#topBox .prompt")).to_be_visible()
+        page.fill("#ta", "Rough start. Meeting Sam tomorrow at 3pm. Maya's birthday is June 9.")
+        page.click("#topBox [data-act=mood][data-v=\"4\"]")
+        assert page.evaluate("S.notes.find(n=>n.type==='journal').mood") == 4
+        page.click("[data-act=usePrompt]"); assert "?" in page.locator("#ta").input_value()
+        page.click("[data-act=gratitude]"); assert page.locator("#ta").input_value().rstrip().endswith("Grateful for:")
+        shot("8-journal-editor")
+    check("journal: today's entry, mood, daily prompt, gratitude line", journal_flow)
+
+    def journal_private():
+        j = page.evaluate("S.notes.find(n=>n.type==='journal')")
+        assert j["reminder"] is None, "private journal must not create a reminder"
+        assert page.evaluate("S.people.filter(p=>p.name==='Maya'&&p.birthday&&p.birthday.m===6).length") == 0, "People must not be extracted from a private journal"
+        expect(page.locator("#remBox")).to_have_text("")
+        nav("notes"); expect(page.locator("#items")).not_to_contain_text("Rough start")
+        assert page.evaluate("visible().every(n=>n.type!=='journal')")
+        nav("followups"); expect(page.locator("#items")).not_to_contain_text("Rough start")
+    check("journal is private: no reminder, no People, not in Notes or Follow-ups", journal_private)
+
+    def journal_share_optin():
+        nav("journal"); page.locator("#items .item", has_text="Rough start").click()
+        page.click("[data-act=shareJ]")
+        assert page.evaluate("S.notes.find(n=>n.type==='journal').shareJournal") is True
+        assert page.evaluate("S.notes.find(n=>n.type==='journal').reminder") is not None, "opted-in entry should detect its date"
+        page.click("[data-act=shareJ]")
+        assert page.evaluate("S.notes.find(n=>n.type==='journal').reminder") is None
+    check("journal opt-in switch turns reminders on and off", journal_share_optin)
+
+    def journal_views():
+        nav("journal"); page.click("[data-act=jview][data-v=calendar]")
+        expect(page.locator(".cal .day.has")).to_have_count(1); expect(page.locator(".cal .day.today")).to_have_count(1)
+        shot("9-journal-calendar")
+        page.click(".cal .day.today"); expect(page.locator("#ta")).to_have_value(re.compile("Rough start"))
+        back(); page.click("[data-act=jview][data-v=timeline]"); expect(page.locator("#items .grp")).to_have_count(1)
+        page.evaluate("S.settings.showStreak=true;renderList()"); expect(page.locator("#items .today")).to_contain_text("in a row")
+        page.evaluate("S.settings.showStreak=false;renderList()"); expect(page.locator("#items .today")).not_to_contain_text("in a row")
+    check("journal calendar + timeline, optional streak (off by default)", journal_views)
+
+    def journal_type_switch():
+        nav("notes"); page.click("[data-act=new]"); page.fill("#ta", "Thoughts to keep private")
+        page.click("[data-act=type][data-type=journal]")
+        assert page.evaluate("S.tab") == "journal" and page.evaluate("byId(S.sel).journalDate") == page.evaluate("todayKey()")
+    check("switching a note's type to Journal moves it and keeps it private", journal_type_switch)
+
     def table_view():
         nav("notes"); collection("all"); page.click("#chips [data-view=db]")
         expect(page.locator("#page")).to_be_visible(); expect(page.locator("#page tbody tr").first).to_be_visible(); shot("7-table")
