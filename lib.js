@@ -170,6 +170,32 @@ function monthGrid(year, month) {
   return weeks;
 }
 
-const L = { JOURNAL_PROMPTS, promptFor, journalStreak, monthGrid, keyOf, fromKey, shiftKey, MON, DAYN, parseWhen, stripBirthdays, parseMonthDay, extractFacts, cleanName, tagsOf, guessType, linksOf, weekStart };
+
+/* ---- notes as a database: filters (pure). f = {type, tag, person (id), priority (min 1-5), lang, date: "today"|"7d"|"30d"} ----
+   Private journal entries are never returned, whatever the filter says. */
+const isPrivJ = n => !!n && n.type === "journal" && !n.shareJournal;
+const FILTER_KEYS = ["type", "tag", "person", "priority", "lang", "date"];
+const cleanFilter = f => { const o = {}; for (const k of FILTER_KEYS) if (f && f[k]) o[k] = f[k]; return o; };
+const filterCount = f => Object.keys(cleanFilter(f)).length;
+function filterNotes(notes, f, now = Date.now(), people = []) {
+  f = cleanFilter(f);
+  const d0 = new Date(now); d0.setHours(0, 0, 0, 0);
+  const since = f.date === "today" ? +d0 : f.date === "7d" ? now - 7 * 864e5 : f.date === "30d" ? now - 30 * 864e5 : 0;
+  const person = f.person ? people.find(p => p.id === f.person) : null;
+  const nameRe = person && person.name ? new RegExp("\\b" + person.name.trim().replace(/[.*+?^${}()|[\]\\]/g, "\\$&").replace(/\s+/g, "\\s+") + "\\b", "i") : null;
+  return notes.filter(n => {
+    if (isPrivJ(n)) return false;
+    if (f.type && n.type !== f.type) return false;
+    if (f.tag && !(n.tags || []).includes(f.tag)) return false;
+    if (f.person && !((n.personIds || []).includes(f.person) || (nameRe && nameRe.test(n.body || "")))) return false;
+    if (f.priority && !(n.priority >= +f.priority)) return false;
+    if (f.lang && n.lang !== f.lang) return false;
+    if (since && !(n.updated >= since)) return false;
+    return true;
+  });
+}
+const sameFilter = (a, b) => JSON.stringify(cleanFilter(a)) === JSON.stringify(cleanFilter(b));
+
+const L = { filterNotes, cleanFilter, filterCount, sameFilter, FILTER_KEYS, JOURNAL_PROMPTS, promptFor, journalStreak, monthGrid, keyOf, fromKey, shiftKey, MON, DAYN, parseWhen, stripBirthdays, parseMonthDay, extractFacts, cleanName, tagsOf, guessType, linksOf, weekStart };
 if (typeof module !== "undefined" && module.exports) module.exports = L; else root.RecallLib = L;
 })(typeof self !== "undefined" ? self : this);

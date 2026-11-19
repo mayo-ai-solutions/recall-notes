@@ -485,6 +485,43 @@ def run(p, engine, w, h, scheme):
         assert page.evaluate("S.settings.coachOn") is False
     check("coach: toggling off removes the cards", coach_toggle_off)
 
+    # ------------------------------------------------------------------ stage 8: filters, saved views, people on notes
+    def filters_and_views():
+        nav("notes"); collection("all")
+        n_all = page.locator("#items .item").count()
+        page.click("[data-act=filters]")
+        page.select_option("#fType", "idea"); page.fill("#fName", "My ideas"); page.click("[data-act=fSave]")
+        expect(page.locator("#chips [data-act=viewApply]")).to_have_text("My ideas")
+        shown = page.evaluate("[...document.querySelectorAll('#items .ty')].map(e=>e.textContent)")
+        assert shown and all(t.lower().startswith("idea") for t in shown), shown
+        assert page.locator("#items .item").count() < n_all
+        page.click("#chips [data-act=viewApply]")                              # toggle the saved view off
+        assert page.locator("#items .item").count() == n_all
+        page.click("[data-act=filters]"); page.select_option("#fTag", "events"); page.click("[data-act=fApply]")
+        expect(page.locator("#items")).to_contain_text("caterer")
+        expect(page.locator("#chips [data-act=fClear]")).to_be_visible()
+        page.click("#chips [data-act=fClear]"); assert page.locator("#items .item").count() == n_all
+        shot("13-filters")
+        # saved views persist in settings (so they survive reload and export)
+        assert page.evaluate("S.settings.views.length") == 1
+        page.reload(); page.wait_for_function("window.__recallReady===true")
+        assert page.evaluate("S.settings.views[0].name") == "My ideas"
+    check("filters: by type/tag, saved view toggles and persists", filters_and_views)
+
+    def filters_never_reach_private():
+        nav("notes"); page.click("[data-act=filters]"); page.select_option("#fType", "idea"); page.click("[data-act=fApply]")
+        assert page.evaluate("RecallLib.filterNotes(S.notes,{},Date.now(),S.people).every(n=>!(n.type==='journal'&&!n.shareJournal))")
+        page.evaluate("S.filter={};renderAll()")
+    check("filters: private journal entries are never returned", filters_never_reach_private)
+
+    def people_on_note():
+        nav("notes"); page.evaluate("S.filter={}"); page.click("[data-act=new]")
+        page.fill("#ta", "Lunch with Maya about the venue photos"); page.click("#editor .bar"); page.wait_for_timeout(250)
+        expect(page.locator("[aria-label='People in this note']")).to_contain_text("Maya")
+        page.click("[aria-label='People in this note'] [data-act=openPerson]")
+        expect(page.locator("#editor")).to_contain_text("Maya")
+    check("people: a note shows the people it mentions and links to them", people_on_note)
+
     def table_view():
         nav("notes"); collection("all"); page.click("#chips [data-view=db]")
         expect(page.locator("#page")).to_be_visible(); expect(page.locator("#page tbody tr").first).to_be_visible(); shot("7-table")

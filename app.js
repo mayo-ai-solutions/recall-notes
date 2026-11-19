@@ -79,7 +79,7 @@ function fmtWhen(ms){
 const toLocalInput=ms=>{const d=new Date(ms);d.setMinutes(d.getMinutes()-d.getTimezoneOffset());return d.toISOString().slice(0,16)};
 
 /* ---------- state ---------- */
-const S={settings:RM.defaultSettings(),notes:[],people:[],tab:"notes",view:"all",tag:null,q:"",sel:null,selP:null,
+const S={filter:{},settings:RM.defaultSettings(),notes:[],people:[],tab:"notes",view:"all",tag:null,q:"",sel:null,selP:null,
   sort:{k:"updated",asc:false},listening:false,interim:"",kbHint:false};
 const byId=id=>S.notes.find(n=>n.id===id);
 const pById=id=>S.people.find(p=>p.id===id);
@@ -114,6 +114,7 @@ function visible(){
   const v=S.view;
   if(v==="pinned")a=a.filter(n=>n.pinned); else if(v!=="all"&&v!=="db")a=a.filter(n=>n.type===v);
   if(S.tag)a=a.filter(n=>n.tags.includes(S.tag));
+  if(RL.filterCount(S.filter))a=RL.filterNotes(a,S.filter,now(),S.people);
   const q=S.q.trim().toLowerCase();
   if(q){const ws=q.split(/\s+/);a=a.filter(n=>{const h=(n.body+" "+n.tags.join(" ")+" "+n.type).toLowerCase();return ws.every(w=>h.includes(w))})}
   a.sort((x,y)=>(y.pinned-x.pinned)||(y.updated-x.updated));
