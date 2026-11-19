@@ -50,10 +50,13 @@ def run(p, engine, w, h, scheme):
 
     def nav(tab):
         """Go to a tab. On a phone that is the bottom tab bar, on a wide screen the left rail."""
-        if mobile and page.locator("body.pane-editor").count(): page.click("[data-act=back]")
+        leave_editor()
         page.click(f"{'#tabbar' if mobile else '#side'} [data-tab={tab}]")
+    def leave_editor():
+        if mobile and page.locator("body.pane-editor").count():
+            page.click("#editor [data-act=ciBack]" if page.locator("#editor .thread").count() else "[data-act=back]")
     def back():
-        if mobile and page.locator("body.pane-editor").count(): page.click("[data-act=back]")
+        leave_editor()
     def collection(view):
         back(); page.click(f"#chips [data-view={view}]")
 
@@ -422,6 +425,65 @@ def run(p, engine, w, h, scheme):
         r = page.evaluate("(()=>{const j=S.notes.find(n=>n.type==='journal'&&!n.shareJournal);return RecallFollowUps.startCheckIn(j,'interview')===null&&!(j.thread&&j.thread.length)})()")
         assert r is True
     check("check-in thread: private journal entries are refused", thread_private_refused)
+
+    # ------------------------------------------------------------------ stage 7: accountability coach
+    def seed_overdue():
+        page.evaluate("""(()=>{const n=newNote("Call the caterer about the tasting deposit",{});n.type="task";
+          RecallFollowUps.schedule(n,Date.now()-2*864e5,"followup");n.fu.snoozes=2;S.notes.push(n);dbPut(n);renderAll()})()""")
+
+    def coach_off_by_default():
+        seed_overdue(); nav("followups")
+        assert page.evaluate("S.settings.coachOn") is False
+        expect(page.locator(".coach")).to_have_count(0)
+        expect(page.locator("#items")).to_contain_text("Earlier"); expect(page.locator("#items")).not_to_contain_text("Overdue")
+        nav("settings")
+        expect(page.locator("[data-act=pref][data-k=coachOn]")).to_have_attribute("aria-checked", "false")
+        expect(page.locator("[data-act=persona]")).to_have_count(0)
+    check("coach: OFF by default, no coach cards, neutral wording, no persona picker", coach_off_by_default)
+
+    def coach_on_personas():
+        nav("settings"); page.click("[data-act=pref][data-k=coachOn]")
+        expect(page.locator("[data-act=persona]")).to_have_count(4)
+        page.click("[data-act=persona][data-id=straight]")
+        assert page.evaluate("S.settings.persona") == "straight" and page.evaluate("S.settings.coachOn") is True
+        nav("followups")
+        expect(page.locator(".coach").first).to_contain_text("Straight Shooter")
+        expect(page.locator("[aria-label='Weekly review']")).to_contain_text("new note")
+        expect(page.locator("[aria-label='Moved a few times']")).to_contain_text("caterer")
+        expect(page.locator("#items")).to_contain_text("Overdue")
+        txt = page.locator("#items").inner_text().lower()
+        assert not re.search(r"score|reliab|\d+\s*%", txt), "coach UI must not score anything"
+        shot("12-coach")
+    check("coach: toggle on, persona chosen, weekly review + re-ask card, no scoring words", coach_on_personas)
+
+    def coach_actions_and_commit():
+        page.click("[data-act=coachReviewDone]")
+        expect(page.locator("[aria-label='Weekly review']")).to_have_count(0)
+        page.click("[data-act=coachKeep]")
+        assert page.evaluate("S.notes.find(n=>/tasting deposit/.test(n.body)).fu.snoozes") == 0
+        page.locator("#items .fu", has_text="tasting deposit").locator("[data-act=ciStart]").click()
+        expect(page.locator(".thread .bubble.recall").first).to_contain_text("tasting deposit")
+        page.click("[data-act=ciChip][data-c=still]")
+        expect(page.locator(".thread .bubble.recall").last).to_contain_text(re.compile("next step", re.I))
+        page.fill("#ciIn", "Send the deposit form"); page.click("[data-act=ciSend]")
+        assert page.evaluate("S.notes.find(n=>/tasting deposit/.test(n.body)).nextStep") == "Send the deposit form"
+        page.click("[data-act=ciNote]")
+    check("coach: weekly review dismisses, Keep it resets snoozes, still-on-it asks for the next step", coach_actions_and_commit)
+
+    def coach_gated_by_entitlement():
+        page.evaluate("RecallEntitlements.ENTITLEMENTS.coach=false; renderAll()")
+        nav("followups")
+        expect(page.locator(".coach")).to_have_count(0)
+        expect(page.locator("#items")).to_contain_text("Earlier")
+        assert page.evaluate("coachOn()") is False
+        page.evaluate("RecallEntitlements.ENTITLEMENTS.coach=true")
+    check("coach: hasFeature('coach') off hides everything even when the toggle is on", coach_gated_by_entitlement)
+
+    def coach_toggle_off():
+        nav("settings"); page.click("[data-act=pref][data-k=coachOn]")
+        nav("followups"); expect(page.locator(".coach")).to_have_count(0)
+        assert page.evaluate("S.settings.coachOn") is False
+    check("coach: toggling off removes the cards", coach_toggle_off)
 
     def table_view():
         nav("notes"); collection("all"); page.click("#chips [data-view=db]")

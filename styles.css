@@ -295,3 +295,11 @@ td.ti{font-weight:600;max-width:20rem;overflow:hidden;text-overflow:ellipsis;whi
 .ci-title{font-family:var(--font-head);font-size:1rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:50%}
 .composer .tbtn{border-radius:1.4rem}
 .updates .bnote b{color:var(--text)}
+/* ---- coach (stage 7) ---- */
+.coach{margin:.35rem .75rem}
+.coach .tbtn{min-height:2.75rem}
+.personas{display:grid;gap:.4rem;margin-top:.4rem}
+.personas button{text-align:left;padding:.7rem .9rem;min-height:2.75rem;border:1.5px solid var(--line);border-radius:var(--r);background:var(--surface);display:flex;flex-direction:column;gap:.1rem}
+.personas button small{color:var(--text2);font-size:.8125rem}
+.personas button[aria-checked="true"]{border-color:var(--charcoal);background:var(--sel)}
+:root[data-theme="dark"] .personas button[aria-checked="true"]{border-color:var(--amber)}

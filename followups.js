@@ -127,7 +127,7 @@ function startCheckIn(n, kind, now = Date.now(), opts = {}) {
   if (kind === "interview") { n.ci = { kind, stage: "ask", step: 0 }; const q = INTERVIEW[0](n); return push(n, msg("recall", q.text, q.chips, now)); }
   if (kind === "question") { n.ci = { kind, stage: "ask", q: opts.question }; return push(n, msg("recall", opts.question, null, now)); }
   n.ci = { kind: "followup", stage: "ask" };
-  return push(n, msg("recall", "Checking back on “" + short(titleOf(n)) + "”. How is it going?", ASK_CHIPS, now));
+  return push(n, msg("recall", opts.opening || ("Checking back on “" + short(titleOf(n)) + "”. How is it going?"), ASK_CHIPS, now));
 }
 
 /* The user answers (chip id or free text). Returns the new Recall messages (already appended to the note's thread).
@@ -152,9 +152,14 @@ function reply(n, input, now = Date.now(), opts = {}) {
     else out.push(offer("When should I check back?"));
     return out;
   }
+  if (ci.stage === "commit") {            // coach only: ask for a concrete next step before offering the next check-in
+    if (text) { n.nextStep = text; addUpdate(n, text, now, "Next step"); out.push(offer("Got it, saved as your next step. When should I check back?")); }
+    else out.push(say(opts.commit || "What is the next step?"));
+    return out;
+  }
   if (ci.kind === "followup") {
     if (chip === "done") { complete(n, now); out.push(close("Marked done. Nice work.")); }
-    else if (chip === "still") out.push(offer("Got it. When should I check back?"));
+    else if (chip === "still") { if (opts.commit) { ci.stage = "commit"; out.push(say(opts.commit)); } else out.push(offer("Got it. When should I check back?")); }
     else if (chip === "snooze") { const t = snoozeOptions(now)[1].at; snooze(n, t); out.push(close("Okay, I will ask again " + fmt(t) + ".")); }
     else if (chip === "drop") { drop(n); out.push(close("Dropped. The note stays in your notes.")); }
     else if (text) { addUpdate(n, text, now); out.push(offer("Saved to your note. When should I check back?")); }

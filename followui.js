@@ -80,7 +80,7 @@ function renderFollowups(){
   let es=FU.agenda(S.notes);if(q)es=es.filter(e=>(e.n.body||"").toLowerCase().includes(q));
   const b=FU.bucket(es),bd=q?[]:birthdaysSoon();
   const sec=(label,list)=>list.length?`<div class="sec">${label}</div>`+list.map(agendaRow).join(""):"";
-  let h=sec(coachActive()?"Overdue":"Earlier",b.overdue)+sec("Today",b.today)+sec("Upcoming",b.upcoming);
+  let h=(q||typeof coachCards!=="function"?"":coachCards())+sec(coachActive()?"Overdue":"Earlier",b.overdue)+sec("Today",b.today)+sec("Upcoming",b.upcoming);
   if(bd.length)h+=`<div class="sec">Birthdays</div>`+bd.map(x=>`<button class="item" data-act="openPerson" data-pid="${x.p.id}"><div class="body"><div class="t">🎂 ${esc(x.p.name||"Someone")}</div><div class="s">${x.d===0?"Today":x.d===1?"Tomorrow":"In "+x.d+" days"}</div></div></button>`).join("");
   $("#items").innerHTML=h||`<div class="empty"><b>${q?"No matches":"Nothing to follow up on"}</b>${q?"Try fewer words.":"Mention a date in a note, or tap “Check back” on one, and it shows up here."}<span class="tag">Notes that follow up.</span></div>`;
 }
@@ -96,7 +96,7 @@ function checkFollowups(){
   S.notes.forEach(n=>{const f=n.fu;
     if(f&&f.state==="open"&&!f.notified&&f.at<=Date.now()&&FU.eligible(n)){
       f.notified=true;changed=true;dbPut(n);
-      notify(titleOf(n),"Check-in · "+fmtWhen(f.at),n.id);
+      notify(titleOf(n),(typeof coachDue==="function"&&coachDue(n))||"Check-in · "+fmtWhen(f.at),n.id);
       toast("🔔 "+titleOf(n),()=>{S.tab="followups";document.body.classList.remove("v-page");open(n.id);renderAll()});
     }});
   return changed;
@@ -121,7 +121,7 @@ function startThread(n,kind,opts){
   if(!n||!FU.eligible(n)){toast("Private entries don’t get check-ins.");return}
   if(S.listening)stopDictation();
   const open_=n.ci&&n.ci.stage!=="closed"&&n.ci.kind===kind&&kind!=="question";
-  if(!open_){FU.startCheckIn(n,kind,Date.now(),opts||{});save(n)}
+  if(!open_){FU.startCheckIn(n,kind,Date.now(),Object.assign({},kind==="followup"&&typeof coachOpts==="function"?coachOpts(n):{},opts||{}));save(n)}
   S.tab="followups";S.sel=n.id;S.thread=n.id;document.body.classList.remove("v-page");document.body.classList.add("pane-editor");
   renderAll();
 }
@@ -143,7 +143,7 @@ function renderThread(n){
 function afterReply(n){save(n);if(S.listening)stopDictation();renderThread(n);refresh(true);if(S.tab==="followups")renderList()}
 ACT.ciStart=el=>startThread(byId(el.dataset.id),el.dataset.kind);
 ACT.fuQ=el=>{const n=byId(S.sel);if(!n)return;const qs=FU.generateQuestions(n);const q=Array.isArray(qs)?qs[+el.dataset.i]:null;if(q)startThread(n,"question",{question:q})};
-ACT.ciChip=el=>{const n=byId(S.thread);if(!n)return;FU.reply(n,{chip:el.dataset.c},Date.now(),{fmt:fmtWhen});afterReply(n)};
-ACT.ciSend=()=>{const n=byId(S.thread),ta=$("#ciIn");if(!n||!ta)return;const t=ta.value.trim();if(!t)return;FU.reply(n,{text:t},Date.now(),{fmt:fmtWhen});afterReply(n)};
+ACT.ciChip=el=>{const n=byId(S.thread);if(!n)return;FU.reply(n,{chip:el.dataset.c},Date.now(),Object.assign({fmt:fmtWhen},coachOpts(n)));afterReply(n)};
+ACT.ciSend=()=>{const n=byId(S.thread),ta=$("#ciIn");if(!n||!ta)return;const t=ta.value.trim();if(!t)return;FU.reply(n,{text:t},Date.now(),Object.assign({fmt:fmtWhen},coachOpts(n)));afterReply(n)};
 ACT.ciBack=()=>{if(S.listening)stopDictation();S.thread=null;S.sel=null;document.body.classList.remove("pane-editor");renderAll()};
 ACT.ciNote=()=>{if(S.listening)stopDictation();S.thread=null;renderEditor()};
