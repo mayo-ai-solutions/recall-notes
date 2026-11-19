@@ -117,7 +117,7 @@ def run(p, engine, w, h, scheme):
 
     def reminders_listed():
         nav("followups")
-        expect(page.locator("#items .item", has_text="call the florist")).to_have_count(1)
+        expect(page.locator("#items .fu", has_text="call the florist")).to_have_count(1)
         shot("3-followups")
     check("reminder appears in the Follow-ups tab", reminders_listed)
 
@@ -325,6 +325,63 @@ def run(p, engine, w, h, scheme):
         assert page.evaluate("S.notes.length") == n_before, "long-press must not create a note"
         page.evaluate("S.settings.lang='auto'")
     check("long-press on the voice button opens the language picker", long_press_picker)
+
+    # ------------------------------------------------------------------ stage 5: follow-ups
+    def fu_propose_and_schedule():
+        nav("notes"); page.click("[data-act=new]")
+        page.fill("#ta", "Idea: a pop-up tasting night for the venue next spring")
+        page.click("#editor .bar"); page.wait_for_timeout(250)           # leave the text box
+        expect(page.locator(".suggest")).to_contain_text("check back")
+        assert page.locator(".suggest [data-act=fuQ]").count() >= 2
+        page.locator(".suggest [data-act=fuPick]").first.click()
+        expect(page.locator(".fu-status")).to_contain_text("Check back")
+        assert page.evaluate("S.notes.find(n=>/pop-up tasting/.test(n.body)).fu.state") == "open"
+        shot("9-followup-set")
+    check("follow-up: proposal card with quick picks and questions, then scheduled", fu_propose_and_schedule)
+
+    def fu_private_never():
+        nav("journal"); page.click("[data-act=jToday]")
+        page.fill("#ta", "Private worry about money and the venue, remind me tomorrow at 3pm")
+        page.click("#editor .bar"); page.wait_for_timeout(250)
+        expect(page.locator(".suggest")).to_have_count(0)
+        expect(page.locator(".fu-prio")).to_have_count(0)
+        nav("followups")
+        expect(page.locator("#items")).not_to_contain_text("Private worry")
+        assert page.evaluate("RecallFollowUps.agenda(S.notes).every(e=>e.n.type!=='journal')")
+    check("follow-up: private journal entries never get proposals or appear in Follow-ups", fu_private_never)
+
+    def fu_tab_actions():
+        page.evaluate("""(()=>{const n=S.notes.find(n=>/pop-up tasting/.test(n.body));n.fu.at=Date.now()-3600e3;n.fu.notified=false;dbPut(n);})()""")
+        page.evaluate("renderAll(); checkFollowups()")
+        nav("followups")
+        expect(page.locator("#items")).to_contain_text("Earlier")                 # coach off: neutral wording
+        expect(page.locator("#items")).not_to_contain_text("Overdue")
+        row = page.locator("#items .fu", has_text="pop-up tasting")
+        row.locator("[data-act=fuSnz]").click(); page.locator("#sheetHost [data-act=fuSnzPick]").nth(1).click()
+        assert page.evaluate("S.notes.find(n=>/pop-up tasting/.test(n.body)).fu.snoozes") == 1
+        row = page.locator("#items .fu", has_text="pop-up tasting")
+        row.locator("[data-act=fuRes]").click(); page.locator("#sheetHost [data-act=fuResPick]").click()
+        assert page.evaluate("S.notes.find(n=>/pop-up tasting/.test(n.body)).fu.snoozes") == 1, "reschedule must not count as a snooze"
+        page.locator("#items .fu", has_text="pop-up tasting").locator("[data-act=fuDone]").click()
+        assert page.evaluate("S.notes.find(n=>/pop-up tasting/.test(n.body)).fu.state") == "done"
+        page.click("#toast [data-act=toastAct]")                                  # Undo
+        assert page.evaluate("S.notes.find(n=>/pop-up tasting/.test(n.body)).fu.state") == "open"
+        shot("10-followups-tab")
+    check("Follow-ups tab: Snooze, Reschedule, Done, Undo; neutral 'Earlier' label", fu_tab_actions)
+
+    def fu_banner_badge():
+        page.evaluate("""(()=>{const n=S.notes.find(n=>/pop-up tasting/.test(n.body));n.fu.at=Date.now()-1000;renderAll()})()""")
+        nav("notes")
+        expect(page.locator("#banner")).to_contain_text("due now")
+        assert page.locator(f"{'#tabbar' if mobile else '#side'} [data-tab=followups] .badge").count() == 1
+    check("'Due now' banner and badge count", fu_banner_badge)
+
+    def fu_priority_trend():
+        nav("notes"); page.locator("#items .item", has_text="pop-up tasting").first.click()
+        page.click("[data-act=prio][data-v=\"2\"]"); page.click("[data-act=prio][data-v=\"4\"]")
+        expect(page.locator(".fu-prio")).to_contain_text("Rising")
+        assert page.evaluate("S.notes.find(n=>/pop-up tasting/.test(n.body)).priorityHistory.length") == 2
+    check("idea priority: history and rising trend", fu_priority_trend)
 
     def table_view():
         nav("notes"); collection("all"); page.click("#chips [data-view=db]")

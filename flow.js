@@ -89,7 +89,7 @@ function onEditExtras(n){
   if(n.type==="journal")return;const b=$("#extraBox");if(!b)return;
   const sig=EXTRA_PARTS.map(f=>f(n)||"").join("");if(sig!==S.extraSig){S.extraSig=sig;b.innerHTML=sig}
 }
-const rowExtras=n=>"";
+const rowExtras=n=>typeof rowFU==="function"?rowFU(n):"";
 const langName=n=>n.lang?RecallLangs.nameOf(n.lang):"Auto";
 const metaExtras=n=>(n.type==="journal"&&n.mood?`<span aria-label="Mood: ${MOODS[n.mood-1][1]}">${MOODS[n.mood-1][0]}</span>`:"")+
   `<button class="tbtn" data-act="noteLang" aria-label="Note language: ${esc(langName(n))}. Change" style="min-height:2.75rem">${ICON.globe} ${esc(langName(n))}</button>`;

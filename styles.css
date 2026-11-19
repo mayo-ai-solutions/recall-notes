@@ -208,7 +208,7 @@ td.ti{font-weight:600;max-width:20rem;overflow:hidden;text-overflow:ellipsis;whi
 .tab .badge{position:absolute;top:.35rem;left:calc(50% + .45rem);font-size:.6875rem;line-height:1.1rem;min-width:1.1rem}
 #toast{position:fixed;left:50%;bottom:calc(var(--tabh) + env(safe-area-inset-bottom) + 6.2rem);transform:translateX(-50%) translateY(1rem);opacity:0;pointer-events:none;background:var(--charcoal);color:var(--paper);padding:.7rem 1.1rem;border-radius:1rem;transition:.25s;z-index:30;max-width:90vw;text-align:center;font-weight:500;box-shadow:0 8px 30px rgba(0,0,0,.25);border:1px solid var(--line)}
 #toast.on{opacity:1;transform:translateX(-50%) translateY(0);pointer-events:auto}
-#toast button{color:var(--amber);margin-left:.8rem;font-weight:700;min-height:2.25rem}
+#toast button{color:var(--amber);margin-left:.8rem;font-weight:700;min-height:2.75rem}
 .scrim{position:fixed;inset:0;background:rgba(21,23,28,.5);z-index:40;display:flex;align-items:flex-end;justify-content:center}
 .sheet{background:var(--surface);width:100%;max-width:34rem;border-radius:1.2rem 1.2rem 0 0;padding:1.1rem 1.1rem calc(1.2rem + env(safe-area-inset-bottom));max-height:86vh;overflow:auto;border:1px solid var(--line)}
 .sheet h2{font-size:1.2rem;margin-bottom:.7rem}
@@ -282,3 +282,13 @@ td.ti{font-weight:600;max-width:20rem;overflow:hidden;text-overflow:ellipsis;whi
   .items{padding-bottom:9rem}
 }
 @media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+/* ---- follow-ups tab (stage 5) ---- */
+.fu{margin:.35rem .75rem;padding:.7rem .85rem;border:1px solid var(--line);border-radius:var(--r);background:var(--bg)}
+.fu.late{border-color:var(--danger)}
+.fu-t{display:block;text-align:left;font-weight:600;min-height:2.75rem;width:100%;font-size:1rem}
+.fu .m{display:flex;gap:.4rem;flex-wrap:wrap;margin:.1rem 0 .3rem}
+.fu-a .tbtn{min-height:2.75rem;display:inline-flex;align-items:center;gap:.3rem}
+.fu-a svg{width:1rem;height:1rem}
+.fu-status .tbtn,.fu-prio .sugg button{min-height:2.75rem}
+.fu-prio .sugg button[aria-pressed="true"]{background:var(--amber);color:var(--charcoal);border-color:var(--amber);font-weight:700}
+.suggest .sugg button{min-height:2.75rem}

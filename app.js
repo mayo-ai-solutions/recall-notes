@@ -413,9 +413,9 @@ function notify(title,body,tag){
   const opts={body,tag,icon:"icons/icon-192.png",badge:"icons/icon-192.png"};
   if(navigator.serviceWorker&&navigator.serviceWorker.controller)navigator.serviceWorker.ready.then(r=>r.showNotification(title,opts)).catch(()=>{});
   else try{new Notification(title,opts)}catch(_){}}
-function downloadICS(n){
+function downloadICS(n,atOverride){
   const f=ms=>new Date(ms).toISOString().replace(/[-:]/g,"").replace(/\.\d{3}/,"");
-  const at=n.reminder.at;
+  const at=atOverride||n.reminder.at;
   const ics=["BEGIN:VCALENDAR","VERSION:2.0","PRODID:-//Recall//EN","BEGIN:VEVENT","UID:"+n.id+"@recall","DTSTAMP:"+f(Date.now()),"DTSTART:"+f(at),"DTEND:"+f(at+36e5),
    "SUMMARY:"+titleOf(n).replace(/[,;\n]/g," "),"DESCRIPTION:"+(n.body||"").replace(/\n/g,"\\n").replace(/[,;]/g," ").slice(0,900),
    "BEGIN:VALARM","TRIGGER:-PT15M","ACTION:DISPLAY","DESCRIPTION:Reminder","END:VALARM","END:VEVENT","END:VCALENDAR"].join("\r\n");

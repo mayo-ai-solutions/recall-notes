@@ -20,6 +20,13 @@ function parseWhen(text, now = new Date()) {
     if (u.startsWith("h")) return { at: new Date(now.getTime() + n * 36e5), hasTime: true };
     if (u === "day") d.setDate(d.getDate() + n); else if (u === "week") d.setDate(d.getDate() + 7 * n); else d.setMonth(d.getMonth() + n);
     dateFound = true;
+  } else if (/\blater today\b/.test(t)) { return { at: new Date(now.getTime() + 3 * 36e5), hasTime: true };
+  } else if (/\b(end of (the )?day|eod|close of business|cob)\b/.test(t)) { d.setHours(17, 0, 0, 0); if (d <= now) d.setDate(d.getDate() + 1); return { at: d, hasTime: true };
+  } else if (/\b(end of (the )?week|eow)\b/.test(t)) { let diff = (5 - now.getDay() + 7) % 7; d.setDate(d.getDate() + diff); d.setHours(17, 0, 0, 0); if (d <= now) d.setDate(d.getDate() + 7); return { at: d, hasTime: true };
+  } else if ((m = t.match(/\b(this|next)\s+weekend\b/)) || /\b(on|over|for) the weekend\b/.test(t)) {
+    let diff = (6 - now.getDay() + 7) % 7; if (m && m[1] === "next") diff += diff === 0 ? 7 : 7; else if (diff === 0 && now.getDay() === 6) diff = 0;
+    d.setDate(d.getDate() + diff); dateFound = true;
+  } else if (/\bnext month\b/.test(t)) { d.setMonth(d.getMonth() + 1); dateFound = true;
   } else if (/\bday after tomorrow\b/.test(t)) { d.setDate(d.getDate() + 2); dateFound = true; }
   else if (/\btomorrow\b/.test(t)) { d.setDate(d.getDate() + 1); dateFound = true; }
   else if (/\b(today|tonight)\b/.test(t)) { dateFound = true; }
