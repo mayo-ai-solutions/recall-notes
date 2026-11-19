@@ -13,6 +13,7 @@ function startDictation(langOverride){
   if(!S.sel)create("");
   const ta=$("#ta");if(!ta)return;
   if(!SR||srBroken){keyboardFallback();return}
+  S.dictState=null;
   let heard=false,restarts=0;
   const lang=langOverride||dictLang();
   try{rec=new SR();rec.continuous=true;rec.interimResults=true;rec.lang=lang;}catch(_){srBroken=true;keyboardFallback();return}
@@ -20,7 +21,7 @@ function startDictation(langOverride){
   rec.onstart=()=>{heard=true};
   rec.onresult=e=>{heard=true;restarts=0;let interim="";
     for(let i=e.resultIndex;i<e.results.length;i++){const r=e.results[i],txt=r[0].transcript;
-      if(r.isFinal){appendText(txt);if(typeof onDictated==="function")onDictated({text:txt,confidence:r[0].confidence,lang})}else interim+=txt}
+      if(r.isFinal){appendText(txt);if(typeof onDictated==="function")onDictated({text:txt,confidence:r[0].confidence,lang,override:!!langOverride})}else interim+=txt}
     S.interim=interim;const el=$("#interim");if(el)el.textContent=interim||"Listening…"};
   rec.onerror=e=>{if(rec!==mine)return;if(e.error==="no-speech"||e.error==="aborted")return;
     if(e.error==="not-allowed"||e.error==="service-not-allowed"||e.error==="audio-capture"||e.error==="network")srBroken=true;
@@ -41,10 +42,20 @@ function appendText(t){const ta=$("#ta");if(!ta)return;t=t.trim();if(!t)return;
   const cur=ta.value;const needsCap=!cur||/[.!?]\s*$/.test(cur)||/\n$/.test(cur);
   t=t.replace(/\b(new line|newline)\b/gi,"\n").replace(/\bnew paragraph\b/gi,"\n\n");
   if(needsCap)t=t.charAt(0).toUpperCase()+t.slice(1);
-  ta.value=cur+(cur&&!/\s$/.test(cur)?" ":"")+t;ta.scrollTop=ta.scrollHeight;onEdit(ta.value)}
+  if(!S.dictState)S.dictState={base:cur,after:cur};
+  ta.value=cur+(cur&&!/\s$/.test(cur)?" ":"")+t;ta.scrollTop=ta.scrollHeight;S.dictState.after=ta.value;onEdit(ta.value)}
 
 ACT.mic=()=>{S.listening?stopDictation():startDictation()};
 ACT.fab=()=>{
   if(S.listening){stopDictation();return}
   if(S.tab==="journal")openTodayJournal();else create("");const ta=$("#ta");if(ta)ta.focus();startDictation();
 };
+
+/* Long-press the voice button (or the Dictate button) to pick a dictation language. A plain tap still dictates.
+   Keyboard and screen-reader users get the same picker from the language chip under every note and from Settings. */
+let lpTimer=null,lpAt=0;
+document.addEventListener("pointerdown",e=>{const el=e.target.closest("#fab,#mic");if(!el)return;
+  clearTimeout(lpTimer);lpTimer=setTimeout(()=>{lpAt=Date.now();if(S.listening)stopDictation();openLangSheet("default")},550)});
+["pointerup","pointercancel","pointerleave"].forEach(ev=>document.addEventListener(ev,()=>clearTimeout(lpTimer)));
+document.addEventListener("click",e=>{if(lpAt&&Date.now()-lpAt<900&&e.target.closest("#fab,#mic")){e.stopPropagation();e.preventDefault();lpAt=0}},true);
+document.addEventListener("contextmenu",e=>{if(e.target.closest("#fab,#mic"))e.preventDefault()});

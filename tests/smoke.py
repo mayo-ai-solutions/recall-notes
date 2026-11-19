@@ -31,6 +31,16 @@ def run(p, engine, w, h, scheme):
     browser = getattr(p, engine).launch()
     ctx = browser.new_context(viewport={"width": w, "height": h}, color_scheme=scheme, accept_downloads=True,
                               device_scale_factor=2 if mobile else 1, has_touch=mobile)
+    # Headless Chromium has no microphone: a fake recognizer lets us test the dictation flow (language, "sounds off", re-record).
+    ctx.add_init_script("""
+      delete window.Translator;
+      window.__srLog = [];
+      window.SpeechRecognition = window.webkitSpeechRecognition = class {
+        start() { window.__srLog.push({lang: this.lang}); this.onstart && this.onstart();
+          const r = window.__srNext || {text: 'hello world', confidence: 0.9};
+          setTimeout(() => { if (this.onresult) { const res = [{transcript: r.text, confidence: r.confidence}]; res.isFinal = true; this.onresult({resultIndex: 0, results: [res]}); } }, 40); }
+        stop() { this.onend && this.onend(); } abort() {}
+      };""")
     page = ctx.new_page()
     errors = []
     page.on("console", lambda m: errors.append(m.text) if m.type == "error" else None)
@@ -257,6 +267,64 @@ def run(p, engine, w, h, scheme):
         page.click("[data-act=type][data-type=journal]")
         assert page.evaluate("S.tab") == "journal" and page.evaluate("byId(S.sel).journalDate") == page.evaluate("todayKey()")
     check("switching a note's type to Journal moves it and keeps it private", journal_type_switch)
+
+    # ------------------------------------------------------------------ stage 4: multi-language dictation
+    def lang_settings():
+        nav("settings")
+        sel = page.locator("#langSel"); expect(sel).to_be_visible()
+        assert sel.locator("option").count() >= 30
+        expect(page.locator("#page")).to_contain_text("code-switching")
+        sel.select_option("es-ES")
+        assert page.evaluate("S.settings.lang") == "es-ES"
+        page.wait_for_timeout(300); page.reload(); page.wait_for_function("window.__recallReady===true")
+        assert page.evaluate("S.settings.lang") == "es-ES", "language did not persist"
+    check("Settings: language picker (40+ languages), persists, honest note", lang_settings)
+
+    def lang_passed_and_stored():
+        nav("notes"); page.click("[data-act=new]")
+        page.evaluate("window.__srLog.length=0; window.__srNext={text:'hola mundo',confidence:0.9}")
+        page.click("#mic"); page.wait_for_function("document.getElementById('ta').value.includes('mundo')")
+        assert page.evaluate("window.__srLog[0].lang") == "es-ES", page.evaluate("window.__srLog")
+        assert page.evaluate("byId(S.sel).lang") == "es-ES"
+        expect(page.locator("#metaRow")).to_contain_text("Español")
+        page.click("#mic")  # stop
+    check("dictation uses the chosen language and stores it on the note", lang_passed_and_stored)
+
+    def translate_manual():
+        expect(page.locator("#extraBox")).to_contain_text("Written in")
+        page.click("[data-act=translate]")
+        expect(page.locator("#sheetHost")).to_contain_text("sends this note")
+        pages_before = len(page.context.pages)
+        page.click("#sheetHost [data-act=sheetClose]")
+        assert len(page.context.pages) == pages_before, "nothing may open without confirmation"
+        assert page.evaluate("byId(S.sel).body").count("English translation") == 0, "no silent translation"
+    check("Translate to English is manual and asks before sending text anywhere", translate_manual)
+
+    def auto_sounds_off():
+        page.evaluate("S.settings.lang='auto'"); back()
+        page.click("[data-act=new]")
+        page.evaluate("window.__srLog.length=0; window.__srNext={text:'gibberish text',confidence:0.2}")
+        page.click("#mic"); page.wait_for_function("document.getElementById('ta').value.includes('ibberish')")
+        expect(page.locator("#langBox")).to_contain_text("Sounds off?")
+        page.evaluate("window.__srNext={text:'bonjour',confidence:0.9}")
+        page.locator("#langBox [data-act=reRecord]").first.click()
+        page.wait_for_function("document.getElementById('ta').value.includes('onjour')")
+        v = page.locator("#ta").input_value(); assert "ibberish" not in v, "wrong take should be dropped: " + v
+        log = page.evaluate("window.__srLog"); assert len(log) == 2 and log[1]["lang"] != log[0]["lang"], log
+        page.click("#mic")
+    check("Auto mode: 'Sounds off?' offers a one-tap re-record in another language", auto_sounds_off)
+
+    def long_press_picker():
+        page.evaluate("S.settings.lang='auto'"); nav("notes")
+        page.dispatch_event("#fab", "pointerdown"); page.wait_for_timeout(750); page.dispatch_event("#fab", "pointerup")
+        expect(page.locator("#sheetHost [role=radiogroup]")).to_be_visible()
+        n_before = page.evaluate("S.notes.length")
+        page.locator("#sheetHost [data-l=ja-JP]").click()
+        assert page.evaluate("S.settings.lang") == "ja-JP"
+        expect(page.locator("#sheetHost .sheet")).to_have_count(0)
+        assert page.evaluate("S.notes.length") == n_before, "long-press must not create a note"
+        page.evaluate("S.settings.lang='auto'")
+    check("long-press on the voice button opens the language picker", long_press_picker)
 
     def table_view():
         nav("notes"); collection("all"); page.click("#chips [data-view=db]")

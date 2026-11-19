@@ -1,6 +1,6 @@
 /* Recall service worker. Network-first for the app shell, so updates show up as soon as you're online,
    with the cached copy as the offline fallback. Bump CACHE when shell files change. */
-const CACHE = "recall-v7";
+const CACHE = "recall-v8";
 const SHELL = ["./", "index.html", "styles.css", "manifest.webmanifest",
   "lib.js", "migrate.js", "entitlements.js", "langs.js", "push.js", "app.js", "voice.js", "flow.js", "boot.js",
   "fonts/inter-latin-wght-normal.woff2", "fonts/space-grotesk-latin-wght-normal.woff2",

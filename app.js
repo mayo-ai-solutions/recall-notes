@@ -290,6 +290,7 @@ function renderEditor(){
   <div class="typebar" role="group" aria-label="Note type">${TYPES.map(([k,l])=>`<button class="chip" data-act="type" data-type="${k}" aria-pressed="${n.type===k}">${l}</button>`).join("")}</div>
   <div class="scroll">
     <div class="kbhint" id="kbHint" ${S.kbHint?"":"hidden"}>${ICON.mic}<span>${KB_HINT} It works even when built-in dictation doesn’t.</span><button data-act="kbX" aria-label="Dismiss">×</button></div>
+    <div id="langBox"></div>
     <div id="topBox"></div>
     <div id="remBox"></div>
     <textarea id="ta" aria-label="Note text" placeholder="${n.type==="journal"?"Write or speak today’s entry. This stays private.":"Start typing or tap Dictate. Mention a date like “call Sam tomorrow at 3pm” and I’ll set the reminder."}" spellcheck="true"></textarea>
@@ -389,7 +390,7 @@ function onEdit(v){
   clearTimeout(exT);exT=setTimeout(()=>extractPeople(n),1800);
 }
 let exT;
-function open(id,{focus=true}={}){const prev=byId(S.sel);if(prev&&prev.id!==id)extractPeople(prev);S.sel=id;S.thread=null;document.body.classList.add("pane-editor");renderEditor();renderList();if(focus&&matchMedia("(min-width:861px)").matches)$("#ta")&&$("#ta").focus()}
+function open(id,{focus=true}={}){const prev=byId(S.sel);if(prev&&prev.id!==id)extractPeople(prev);S.sel=id;S.thread=null;S.langHint=null;S.dictState=null;document.body.classList.add("pane-editor");renderEditor();renderList();if(focus&&matchMedia("(min-width:861px)").matches)$("#ta")&&$("#ta").focus()}
 function create(body="",opts={}){
   const n=newNote(body,opts);S.notes.unshift(n);dbPut(n);S.q="";$("#q").value="";
   const want=n.type==="journal"?"journal":S.tab==="journal"?"journal":"notes";
