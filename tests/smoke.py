@@ -558,6 +558,20 @@ def run(p, engine, w, h, scheme):
         bad = [e for e in errors if "favicon" not in e]
         assert not bad, bad
     check("no console errors", no_console_errors)
+    def works_offline():
+        page.evaluate("navigator.serviceWorker.ready.then(()=>true)")
+        page.wait_for_timeout(800)
+        count = page.evaluate("S.notes.length")
+        ctx.set_offline(True)
+        try:
+            page.reload(); page.wait_for_function("window.__recallReady===true", timeout=15000)
+            assert page.evaluate("S.notes.length") == count, "notes must still be there offline"
+            assert page.evaluate("getComputedStyle(document.body).fontFamily").lower().find("inter") >= 0
+            page.wait_for_function("document.fonts.check('16px Inter')")
+        finally:
+            ctx.set_offline(False)
+    check("works offline after first load (service worker shell + data)", works_offline)
+
     ctx.close(); browser.close()
 
 with sync_playwright() as p:

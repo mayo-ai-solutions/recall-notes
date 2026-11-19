@@ -81,3 +81,7 @@ Private journal entries (`type: journal`, `shareJournal` false) are excluded fro
 - Dictation language support varies on iOS Safari, and mixing two languages in one sentence is unreliable.
 - Date detection understands English only.
 - Not testable here: real iPhone behavior, Safari/WebKit dictation, Add to Home Screen, Calendar sheet. Chromium is the only engine run in this environment.
+
+## Status
+
+All build stages (1 to 9) are implemented on `v2` with tests. See README.md (what works and honest limits) and CHANGELOG.md. Open: real-iPhone verification, server web push, and the pull request review.
