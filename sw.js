@@ -1,7 +1,7 @@
 /* Recall service worker. Network-first for the app shell, so updates show up as soon as you're online,
    with the cached copy as the offline fallback. Bump CACHE when shell files change. */
-const CACHE = "recall-v4";
-const SHELL = ["./", "index.html", "lib.js", "manifest.webmanifest",
+const CACHE = "recall-v5";
+const SHELL = ["./", "index.html", "lib.js", "migrate.js", "manifest.webmanifest",
   "icons/apple-touch-icon.png", "icons/icon-192.png", "icons/icon-512.png", "icons/icon-maskable-512.png"];
 
 self.addEventListener("install", e => {

@@ -211,6 +211,7 @@ td.ti{font-weight:600;max-width:320px;overflow:hidden;text-overflow:ellipsis;whi
 <div id="toast" role="status" aria-live="polite"></div>
 
 <script src="lib.js"></script>
+<script src="migrate.js"></script>
 <script>
 "use strict";
 /* ---------- tiny helpers ---------- */
@@ -238,11 +239,27 @@ const typeMeta=t=>TYPES.find(x=>x[0]===t)||TYPES[0];
 
 /* ---------- IndexedDB ---------- */
 let DB;
-const idb=()=>new Promise((res,rej)=>{const r=indexedDB.open("recall",2);r.onupgradeneeded=()=>{const d=r.result;["notes","people"].forEach(n=>{if(!d.objectStoreNames.contains(n))d.createObjectStore(n,{keyPath:"id"})})};r.onsuccess=()=>res(r.result);r.onerror=()=>rej(r.error)});
+const idb=()=>new Promise((res,rej)=>{const r=indexedDB.open("recall",3);r.onupgradeneeded=()=>{const d=r.result;["notes","people","meta"].forEach(n=>{if(!d.objectStoreNames.contains(n))d.createObjectStore(n,{keyPath:n==="meta"?"key":"id"})})};r.onsuccess=()=>res(r.result);r.onerror=()=>rej(r.error)});
 const tx=(st,mode,fn)=>new Promise((res,rej)=>{const t=DB.transaction(st,mode);const out=fn(t.objectStore(st));t.oncomplete=()=>res(out&&out.result);t.onerror=()=>rej(t.error)});
 const dbAll=(st="notes")=>tx(st,"readonly",o=>o.getAll());
 const dbPut=(n,st="notes")=>tx(st,"readwrite",o=>o.put(n));
 const dbDel=(id,st="notes")=>tx(st,"readwrite",o=>o.delete(id));
+const metaGet=key=>tx("meta","readonly",o=>o.get(key)).then(r=>r?r.value:undefined);
+const metaPut=(key,value)=>tx("meta","readwrite",o=>o.put({key,value}));
+const RM=RecallMigrate;
+/* Upgrade stored data in place (additive only). The first time old data is found, a snapshot copy goes
+   into the meta store so v1 data can always be recovered. */
+async function migrateStored(){
+  const notes=await dbAll(),people=await dbAll("people");
+  const oldN=notes.filter(RM.needsMigration),oldP=people.filter(RM.needsMigration);
+  if(oldN.length||oldP.length){
+    if(!(await metaGet("preMigrationBackup")))await metaPut("preMigrationBackup",RM.snapshotBefore(notes,people));
+    for(const n of oldN)await dbPut(RM.migrateNote(n));
+    for(const p of oldP)await dbPut(RM.migratePerson(p),"people");
+  }
+  S.settings=RM.migrateSettings(await metaGet("settings"));
+}
+const saveSettings=()=>metaPut("settings",S.settings).catch(()=>{});
 
 /* ---------- natural language dates (shared with tests via lib.js) ---------- */
 const {parseWhen,stripBirthdays,extractFacts,tagsOf,guessType,linksOf,weekStart}=RecallLib;
@@ -272,7 +289,7 @@ function enrich(n,{keepType=false}={}){
 const newNote=(body="")=>enrich({id:uid(),body,type:"note",tags:[],pinned:false,created:Date.now(),updated:Date.now(),reminder:null});
 
 /* ---------- state ---------- */
-const S={notes:[],people:[],selP:null,view:"all",tag:null,q:"",sel:null,sort:{k:"updated",asc:false},listening:false,interim:""};
+const S={settings:null,notes:[],people:[],selP:null,view:"all",tag:null,q:"",sel:null,sort:{k:"updated",asc:false},listening:false,interim:""};
 const byId=id=>S.notes.find(n=>n.id===id);
 const pById=id=>S.people.find(p=>p.id===id);
 const now=()=>Date.now();
@@ -594,15 +611,16 @@ function openICS(name,ics){
 async function download(name,text,type){
   if(isIOS&&navigator.canShare){try{const f=new File([text],name,{type});if(navigator.canShare({files:[f]})){await navigator.share({files:[f],title:name});return}}catch(e){if(e&&e.name==="AbortError")return}}
   const a=document.createElement("a"),u=URL.createObjectURL(new Blob([text],{type}));a.href=u;a.download=name;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(u),4000)}
-function exportJSON(){download("recall-backup-"+new Date().toISOString().slice(0,10)+".json",JSON.stringify({app:"recall",version:2,notes:S.notes,people:S.people},null,2),"application/json")}
+function exportJSON(){download("recall-backup-"+new Date().toISOString().slice(0,10)+".json",JSON.stringify({app:"recall",version:RM.SCHEMA,notes:S.notes,people:S.people,settings:S.settings},null,2),"application/json")}
 function exportCSV(){const q=s=>'"'+String(s).replace(/"/g,'""')+'"';
   const rows=[["title","type","tags","reminder","done","created","updated","body"]].concat(S.notes.map(n=>[titleOf(n),n.type,n.tags.join(" "),n.reminder?new Date(n.reminder.at).toISOString():"",n.reminder&&n.reminder.done?"yes":"",new Date(n.created).toISOString(),new Date(n.updated).toISOString(),n.body]));
   download("recall-"+new Date().toISOString().slice(0,10)+".csv",rows.map(r=>r.map(q).join(",")).join("\n"),"text/csv")}
-async function importJSON(file){try{const raw=JSON.parse(await file.text());const arr=Array.isArray(raw)?raw:raw.notes;if(!Array.isArray(arr))throw 0;let c=0;
-  for(const p of (raw.people||[])){if(!p||!p.id)continue;p.favorites=p.favorites||[];const i=S.people.findIndex(x=>x.id===p.id);if(i>=0)S.people[i]=p;else S.people.push(p);await dbPut(p,"people")}
-  for(const n of arr){if(!n||typeof n.body!=="string")continue;n.id=n.id||uid();n.created=n.created||Date.now();n.updated=n.updated||Date.now();n.tags=n.tags||tagsOf(n.body);n.type=n.type||"note";
-    const i=S.notes.findIndex(x=>x.id===n.id);if(i>=0)S.notes[i]=n;else S.notes.push(n);await dbPut(n);c++}
-  refresh(true);toast("Imported "+c+" notes"+(raw.people?" and "+raw.people.length+" people":""))}catch(_){toast("That file isn’t a Recall backup.")}}
+async function importJSON(file){
+  let r;try{r=RM.normalizeImport(JSON.parse(await file.text()))}catch(_){toast("That file isn’t a Recall backup.");return}
+  for(const p of r.people){const i=S.people.findIndex(x=>x.id===p.id);if(i>=0)S.people[i]=p;else S.people.push(p);await dbPut(p,"people")}
+  for(const n of r.notes){const i=S.notes.findIndex(x=>x.id===n.id);if(i>=0)S.notes[i]=n;else S.notes.push(n);await dbPut(n)}
+  if(r.settings){S.settings=r.settings;await saveSettings()}
+  refresh(true);toast("Imported "+r.notes.length+" notes"+(r.people.length?" and "+r.people.length+" people":"")+(r.skipped?` (${r.skipped} skipped)`:""))}
 
 /* ---------- toast ---------- */
 let toastT;
@@ -669,7 +687,7 @@ async function seed(){
   for(let i=0;i<samples.length;i++){const n=newNote(samples[i]);n.created=n.updated=Date.now()-i*3600e3;S.notes.push(n);await dbPut(n)}
 }
 (async function boot(){
-  try{DB=await idb();S.notes=await dbAll();S.people=await dbAll("people");
+  try{DB=await idb();await migrateStored();S.notes=await dbAll();S.people=await dbAll("people");
     let seeded=false;try{seeded=localStorage.getItem("recall.seeded")}catch(_){}
     if(!S.notes.length&&!seeded){await seed();try{localStorage.setItem("recall.seeded","1")}catch(_){}}
     let sp=false;try{sp=localStorage.getItem("recall.seededP")}catch(_){}
