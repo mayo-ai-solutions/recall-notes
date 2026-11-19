@@ -94,5 +94,18 @@ ok(L.guessType("Idea: open-mic night") === "idea", "idea");
 ok(JSON.stringify(L.linksOf("see [[Trip plan]] and [[Trip plan]] and [[Budget]]")) === '["Trip plan","Budget"]', "wiki links");
 ok(+L.weekStart(+NOW) === +new Date(2026, 10, 16), "week starts Monday");
 
+/* stage 5 additions */
+{const L=require("../lib.js"),NOW=new Date(2026,10,18,10,0); // Wednesday
+ const t=(s,f)=>{const r=L.parseWhen(s,NOW);const ok=!!r&&f(r);console.log(ok?"  ok":"  FAIL","parseWhen:",s);if(!ok)process.exitCode=1};
+ t("call mom this weekend",r=>r.at.getDay()===6&&r.at.getDate()===21&&!r.hasTime);
+ t("plan it next weekend",r=>r.at.getDay()===6&&r.at.getDate()===28);
+ t("finish by end of day",r=>r.at.getHours()===17&&r.at.getDate()===18&&r.hasTime);
+ t("send it by end of the week",r=>r.at.getDay()===5&&r.at.getDate()===20&&r.at.getHours()===17);
+ t("review next month",r=>r.at.getMonth()===11&&r.at.getDate()===18);
+ t("look at this later today",r=>r.at-NOW===3*36e5);
+ t("do it over the weekend",r=>r.at.getDay()===6);
+ {const r=L.parseWhen("weekend vibes are nice",NOW);console.log(r===null?"  ok":"  FAIL","bare 'weekend' ignored");if(r!==null)process.exitCode=1}
+}
+
 console.log(`\n${pass} passed, ${fail} failed`);
-process.exit(fail ? 1 : 0);
+process.exit(fail || process.exitCode ? 1 : 0);

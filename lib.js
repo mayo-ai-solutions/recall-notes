@@ -20,6 +20,13 @@ function parseWhen(text, now = new Date()) {
     if (u.startsWith("h")) return { at: new Date(now.getTime() + n * 36e5), hasTime: true };
     if (u === "day") d.setDate(d.getDate() + n); else if (u === "week") d.setDate(d.getDate() + 7 * n); else d.setMonth(d.getMonth() + n);
     dateFound = true;
+  } else if (/\blater today\b/.test(t)) { return { at: new Date(now.getTime() + 3 * 36e5), hasTime: true };
+  } else if (/\b(end of (the )?day|eod|close of business|cob)\b/.test(t)) { d.setHours(17, 0, 0, 0); if (d <= now) d.setDate(d.getDate() + 1); return { at: d, hasTime: true };
+  } else if (/\b(end of (the )?week|eow)\b/.test(t)) { let diff = (5 - now.getDay() + 7) % 7; d.setDate(d.getDate() + diff); d.setHours(17, 0, 0, 0); if (d <= now) d.setDate(d.getDate() + 7); return { at: d, hasTime: true };
+  } else if ((m = t.match(/\b(this|next)\s+weekend\b/)) || /\b(on|over|for) the weekend\b/.test(t)) {
+    let diff = (6 - now.getDay() + 7) % 7; if (m && m[1] === "next") diff += diff === 0 ? 7 : 7; else if (diff === 0 && now.getDay() === 6) diff = 0;
+    d.setDate(d.getDate() + diff); dateFound = true;
+  } else if (/\bnext month\b/.test(t)) { d.setMonth(d.getMonth() + 1); dateFound = true;
   } else if (/\bday after tomorrow\b/.test(t)) { d.setDate(d.getDate() + 2); dateFound = true; }
   else if (/\btomorrow\b/.test(t)) { d.setDate(d.getDate() + 1); dateFound = true; }
   else if (/\b(today|tonight)\b/.test(t)) { dateFound = true; }
@@ -124,6 +131,71 @@ const linksOf = b => [...new Set((String(b).match(/\[\[([^\[\]\n]{1,120})\]\]/g)
 /* Monday 00:00 of the week containing ms (local time) */
 function weekStart(ms) { const d = new Date(ms); d.setHours(0, 0, 0, 0); d.setDate(d.getDate() - ((d.getDay() + 6) % 7)); return d; }
 
-const L = { MON, DAYN, parseWhen, stripBirthdays, parseMonthDay, extractFacts, cleanName, tagsOf, guessType, linksOf, weekStart };
+/* ---------- journal helpers ---------- */
+const JOURNAL_PROMPTS = [
+  "What went well today? What drained you?",
+  "What are you grateful for today?",
+  "What is one thing you want to remember about today?",
+  "What did you learn today?",
+  "What is on your mind right now?",
+  "What would make tomorrow a good day?",
+  "Who made a difference to you today, and how?",
+  "What is something small you are proud of?",
+  "What did you avoid today, and why?",
+  "What do you need more of this week? Less of?",
+  "What surprised you today?",
+  "What are you looking forward to?"
+];
+/* The same prompt all day, a different one each day. */
+function promptFor(dateKey) {
+  let h = 0; for (const c of String(dateKey)) h = (h * 31 + c.charCodeAt(0)) >>> 0;
+  return JOURNAL_PROMPTS[h % JOURNAL_PROMPTS.length];
+}
+const keyOf = d => d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0");
+const fromKey = k => { const [y, m, d] = String(k).split("-").map(Number); return new Date(y, m - 1, d); };
+const shiftKey = (k, days) => { const d = fromKey(k); d.setDate(d.getDate() + days); return keyOf(d); };
+/* Days in a row with an entry, ending today. If today has none yet, a streak that ran through yesterday still counts. */
+function journalStreak(keys, todayKey) {
+  const have = new Set(keys); let k = have.has(todayKey) ? todayKey : shiftKey(todayKey, -1), n = 0;
+  while (have.has(k)) { n++; k = shiftKey(k, -1); }
+  return n;
+}
+/* Weeks (Sunday first) for a month; days outside the month are null. month is 0-11. */
+function monthGrid(year, month) {
+  const first = new Date(year, month, 1), days = new Date(year, month + 1, 0).getDate();
+  const cells = Array(first.getDay()).fill(null);
+  for (let d = 1; d <= days; d++) cells.push(d);
+  while (cells.length % 7) cells.push(null);
+  const weeks = []; for (let i = 0; i < cells.length; i += 7) weeks.push(cells.slice(i, i + 7));
+  return weeks;
+}
+
+
+/* ---- notes as a database: filters (pure). f = {type, tag, person (id), priority (min 1-5), lang, date: "today"|"7d"|"30d"} ----
+   Private journal entries are never returned, whatever the filter says. */
+const isPrivJ = n => !!n && n.type === "journal" && !n.shareJournal;
+const FILTER_KEYS = ["type", "tag", "person", "priority", "lang", "date"];
+const cleanFilter = f => { const o = {}; for (const k of FILTER_KEYS) if (f && f[k]) o[k] = f[k]; return o; };
+const filterCount = f => Object.keys(cleanFilter(f)).length;
+function filterNotes(notes, f, now = Date.now(), people = []) {
+  f = cleanFilter(f);
+  const d0 = new Date(now); d0.setHours(0, 0, 0, 0);
+  const since = f.date === "today" ? +d0 : f.date === "7d" ? now - 7 * 864e5 : f.date === "30d" ? now - 30 * 864e5 : 0;
+  const person = f.person ? people.find(p => p.id === f.person) : null;
+  const nameRe = person && person.name ? new RegExp("\\b" + person.name.trim().replace(/[.*+?^${}()|[\]\\]/g, "\\$&").replace(/\s+/g, "\\s+") + "\\b", "i") : null;
+  return notes.filter(n => {
+    if (isPrivJ(n)) return false;
+    if (f.type && n.type !== f.type) return false;
+    if (f.tag && !(n.tags || []).includes(f.tag)) return false;
+    if (f.person && !((n.personIds || []).includes(f.person) || (nameRe && nameRe.test(n.body || "")))) return false;
+    if (f.priority && !(n.priority >= +f.priority)) return false;
+    if (f.lang && n.lang !== f.lang) return false;
+    if (since && !(n.updated >= since)) return false;
+    return true;
+  });
+}
+const sameFilter = (a, b) => JSON.stringify(cleanFilter(a)) === JSON.stringify(cleanFilter(b));
+
+const L = { filterNotes, cleanFilter, filterCount, sameFilter, FILTER_KEYS, JOURNAL_PROMPTS, promptFor, journalStreak, monthGrid, keyOf, fromKey, shiftKey, MON, DAYN, parseWhen, stripBirthdays, parseMonthDay, extractFacts, cleanName, tagsOf, guessType, linksOf, weekStart };
 if (typeof module !== "undefined" && module.exports) module.exports = L; else root.RecallLib = L;
 })(typeof self !== "undefined" ? self : this);

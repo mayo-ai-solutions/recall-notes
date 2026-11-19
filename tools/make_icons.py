@@ -1,40 +1,45 @@
-"""Generate Recall's PNG icons with Pillow: a rounded yellow-orange note glyph on a soft gradient."""
-from PIL import Image, ImageDraw, ImageFilter
+"""Render the Recall (Ember) icons from the logo mark. Run: python3 tools/make_icons.py
+Uses Chromium (Playwright) to rasterize the SVG, so there are no extra image libraries.
+Outputs: icons/apple-touch-icon.png (180), icon-192.png, icon-512.png, icon-maskable-512.png,
+icons/favicon.svg, icons/favicon-32.png, icons/logo.svg"""
 import os
-OUT = os.path.join(os.path.dirname(__file__), "..", "icons")
+from playwright.sync_api import sync_playwright
+
+ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+OUT = os.path.join(ROOT, "icons")
+CHARCOAL, AMBER = "#15171C", "#F5A524"
+
+BUBBLE = "M10 6h44a6 6 0 0 1 6 6v28a6 6 0 0 1-6 6H34L22 58V46H10a6 6 0 0 1-6-6V12a6 6 0 0 1 6-6z"
+SPARK = "M32 14l3.5 8.5L44 26l-8.5 3.5L32 38l-3.5-8.5L20 26l8.5-3.5z"
+
+def mark(scale, bg=True):
+    """Full-bleed square (charcoal) with the mark centered. The mark's own box is 4..60 x 6..58, centre (32, 32)."""
+    s = scale
+    inner = f'<g transform="translate(32 32) scale({s}) translate(-32 -32)"><path d="{BUBBLE}" fill="{AMBER}"/><path d="{SPARK}" fill="{CHARCOAL}"/></g>'
+    rect = f'<rect width="64" height="64" fill="{CHARCOAL}"/>' if bg else ""
+    return f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">{rect}{inner}</svg>'
+
+LOGO_SVG = f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="Recall"><path d="{BUBBLE}" fill="{AMBER}"/><path d="{SPARK}" fill="{CHARCOAL}"/></svg>'
+FAVICON_SVG = f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><rect width="64" height="64" rx="14" fill="{CHARCOAL}"/><g transform="translate(32 32) scale(.78) translate(-32 -32)"><path d="{BUBBLE}" fill="{AMBER}"/><path d="{SPARK}" fill="{CHARCOAL}"/></g></svg>'
+
+JOBS = [  # file, pixel size, svg
+    ("apple-touch-icon.png", 180, mark(0.78)),   # iOS rounds the corners itself, so full bleed
+    ("icon-192.png", 192, mark(0.78)),
+    ("icon-512.png", 512, mark(0.78)),
+    ("icon-maskable-512.png", 512, mark(0.62)),  # mark stays inside the 80% maskable safe zone
+    ("favicon-32.png", 32, FAVICON_SVG),
+]
+
 os.makedirs(OUT, exist_ok=True)
+with open(os.path.join(OUT, "logo.svg"), "w") as f: f.write(LOGO_SVG)
+with open(os.path.join(OUT, "favicon.svg"), "w") as f: f.write(FAVICON_SVG)
 
-def lerp(a, b, t): return tuple(int(a[i] + (b[i] - a[i]) * t) for i in range(3))
-
-def render(size, glyph_scale):
-    S = size * 4  # supersample for smooth edges
-    img = Image.new("RGB", (S, S))
-    top, bot = (255, 248, 228), (255, 222, 186)  # soft warm gradient
-    px = img.load()
-    for y in range(S):
-        for x in range(S):
-            px[x, y] = lerp(top, bot, (0.65 * y + 0.35 * x) / S)
-    g = int(S * glyph_scale); x0 = (S - g) // 2; y0 = (S - g) // 2 + int(S * 0.01)
-    r = int(g * 0.2)
-    # shadow
-    sh = Image.new("RGBA", (S, S), (0, 0, 0, 0)); ImageDraw.Draw(sh).rounded_rectangle([x0, y0 + int(g * .05), x0 + g, y0 + g + int(g * .05)], r, fill=(190, 110, 20, 90))
-    sh = sh.filter(ImageFilter.GaussianBlur(S * 0.025)); img.paste(sh, (0, 0), sh)
-    # note body: vertical yellow -> orange gradient, rounded
-    body = Image.new("RGB", (g, g)); bp = body.load()
-    for y in range(g):
-        c = lerp((255, 214, 10), (255, 159, 10), y / g)
-        for x in range(g): bp[x, y] = c
-    mask = Image.new("L", (g, g), 0); ImageDraw.Draw(mask).rounded_rectangle([0, 0, g - 1, g - 1], r, fill=255)
-    img.paste(body, (x0, y0), mask)
-    # ruled lines
-    d = ImageDraw.Draw(img); lw = max(4, int(g * 0.065)); pad = int(g * 0.22)
-    for i, frac in enumerate((0.36, 0.53, 0.70)):
-        y = y0 + int(g * frac); x1 = x0 + g - pad - (int(g * 0.18) if i == 2 else 0)
-        d.rounded_rectangle([x0 + pad, y - lw // 2, x1, y + lw // 2], lw // 2, fill=(255, 255, 255))
-    return img.resize((size, size), Image.LANCZOS)
-
-render(180, 0.62).save(os.path.join(OUT, "apple-touch-icon.png"))
-render(192, 0.62).save(os.path.join(OUT, "icon-192.png"))
-render(512, 0.62).save(os.path.join(OUT, "icon-512.png"))
-render(512, 0.48).save(os.path.join(OUT, "icon-maskable-512.png"))  # glyph inside the 80% safe zone
-print("icons written")
+with sync_playwright() as p:
+    b = p.chromium.launch()
+    for name, px, svg in JOBS:
+        page = b.new_page(viewport={"width": px, "height": px})
+        page.set_content(f'<html><body style="margin:0;background:transparent">{svg.replace("<svg ", f"<svg width=%d height=%d " % (px, px), 1)}</body></html>')
+        page.screenshot(path=os.path.join(OUT, name), omit_background=True, clip={"x": 0, "y": 0, "width": px, "height": px})
+        page.close()
+        print("wrote", name, px)
+    b.close()
