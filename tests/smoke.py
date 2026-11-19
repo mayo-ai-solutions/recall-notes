@@ -1,8 +1,8 @@
 """End-to-end smoke test. Run: python3 tests/smoke.py
-Serves the repo on a local port and drives the app in Chromium (and WebKit when installed)
-at an iPhone-sized 390x844 viewport and a 1280x800 desktop viewport, in light and dark mode.
-Screenshots go to screenshots/."""
-import functools, http.server, os, socketserver, sys, threading, json, re
+Serves the repo on a local port and drives the app in Chromium (and WebKit when installed) at an iPhone-sized
+390x844 viewport and a 1280x800 desktop viewport, in light and dark mode. Screenshots go to screenshots/ (gitignored).
+Env: SMOKE_QUICK=1 (light only), SMOKE_ONLY=chromium-390 (one engine/width)."""
+import functools, http.server, os, re, socketserver, sys, threading, json
 from playwright.sync_api import sync_playwright, expect
 
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
@@ -35,26 +35,46 @@ def run(p, engine, w, h, scheme):
     errors = []
     page.on("console", lambda m: errors.append(m.text) if m.type == "error" else None)
     page.on("pageerror", lambda e: errors.append(str(e)))
-    page.goto(URL); page.wait_for_selector("#items .item")
+    page.goto(URL); page.wait_for_function("window.__recallReady===true"); page.wait_for_selector("#items .item")
     shot = lambda n: page.screenshot(path=os.path.join(SHOTS, f"{tag}-{n}.png"))
 
-    def nav(view):
-        if mobile:
-            if page.locator("#dbBack").is_visible(): page.click("#dbBack")
-            if page.locator("#back").is_visible(): page.click("#back")
-            page.click(f"#chips [data-view={view}]")
-        else:
-            page.click(f"#side [data-view={view}]")
+    def nav(tab):
+        """Go to a tab. On a phone that is the bottom tab bar, on a wide screen the left rail."""
+        if mobile and page.locator("body.pane-editor").count(): page.click("[data-act=back]")
+        page.click(f"{'#tabbar' if mobile else '#side'} [data-tab={tab}]")
+    def back():
+        if mobile and page.locator("body.pane-editor").count(): page.click("[data-act=back]")
+    def collection(view):
+        back(); page.click(f"#chips [data-view={view}]")
 
+    # ------------------------------------------------------------------ stage 2: shell + brand
     def shell():
         expect(page.locator("#items")).to_be_visible(); shot("1-list")
-        r = page.request.get(URL + "manifest.webmanifest"); assert r.ok and json.loads(r.text())["display"] == "standalone"
+        tabs = page.locator(("#tabbar" if mobile else "#side") + " [data-tab]")
+        expect(tabs).to_have_count(5)
+        assert [t.strip() for t in tabs.all_inner_texts()] == ["Notes", "Journal", "Follow-ups", "People", "Settings"] or \
+               [re.sub(r"\d+$", "", t.strip()).strip() for t in tabs.all_inner_texts()] == ["Notes", "Journal", "Follow-ups", "People", "Settings"], tabs.all_inner_texts()
+        expect(page.locator("#fab")).to_be_visible()
+        r = page.request.get(URL + "manifest.webmanifest"); m = json.loads(r.text())
+        assert r.ok and m["display"] == "standalone" and "Recall" in m["name"]
         assert page.request.get(URL + "sw.js").ok and page.request.get(URL + "icons/apple-touch-icon.png").ok
-        page.wait_for_function("navigator.serviceWorker && navigator.serviceWorker.getRegistration().then(r=>!!r)", timeout=10000) if engine == "chromium" else None
-    check("app shell, manifest, service worker", shell)
+        if engine == "chromium":
+            page.wait_for_function("navigator.serviceWorker && navigator.serviceWorker.getRegistration().then(r=>!!r)", timeout=10000)
+    check("app shell: 5 tabs, voice button, manifest, service worker", shell)
+
+    def brand():
+        page.evaluate("document.fonts.ready")
+        assert page.evaluate("document.fonts.check('600 16px \"Space Grotesk\"') && document.fonts.check('400 16px Inter')"), "fonts not loaded"
+        css = lambda sel, prop: page.evaluate(f"getComputedStyle(document.querySelector('{sel}')).{prop}")
+        assert css("body", "backgroundColor") == ("rgb(21, 23, 28)" if scheme == "dark" else "rgb(243, 240, 233)"), css("body", "backgroundColor")
+        assert css("#fab", "backgroundColor") == "rgb(245, 165, 36)", css("#fab", "backgroundColor")
+        assert "Space Grotesk" in css("#ltitle", "fontFamily"), css("#ltitle", "fontFamily")
+        assert page.locator("#lh svg.logo").count() == 1, "logo missing from header"
+        if not mobile: expect(page.locator("#side")).to_contain_text("Notes that follow up.")
+    check("Ember brand: tokens, fonts, logo, tagline", brand)
 
     def create():
-        page.click("#newBtn"); page.fill("#ta", NOTE)
+        page.click("[data-act=new]"); page.fill("#ta", NOTE)
         expect(page.locator("#remBox")).to_contain_text("Tomorrow")
         expect(page.locator("#remCal")).to_be_visible()
         expect(page.locator("#calHint")).to_be_visible()
@@ -71,44 +91,41 @@ def run(p, engine, w, h, scheme):
         expect(page.locator("[data-pf=bm]")).to_have_value("3"); expect(page.locator("[data-pf=bd]")).to_have_value("4")
         expect(page.locator("[data-pf=by]")).to_have_value("1992")
         expect(page.locator("#bnote")).to_contain_text(re.compile(r"Birthday (in \d+ days|today|tomorrow)", re.I))
-        expect(page.locator("#ment [data-mention]")).to_contain_text("Remind me to call the florist")
+        expect(page.locator("#ment [data-act=mention]")).to_contain_text("Remind me to call the florist")
         shot("4-person")
     check("person auto-created with birthday + favorite + mentions", person_auto)
 
     def birthday_no_reminder():
-        # the birthday sentence alone must not create a reminder; the florist reminder must be the only new one
         n = page.evaluate("S.notes.filter(n=>n.body.includes('florist'))[0].reminder.at")
         assert abs(n - page.evaluate("(()=>{const d=new Date();d.setDate(d.getDate()+1);d.setHours(10,0,0,0);return +d})()")) < 1000
     check("birthday sentence does not hijack the reminder", birthday_no_reminder)
 
     def mention_link():
-        page.locator("#ment [data-mention]").first.click()
+        page.locator("#ment [data-act=mention]").first.click()
         expect(page.locator("#ta")).to_have_value(NOTE)
-    check("'Mentioned in' links back to the note", mention_link)
+    check("'Notes about' links back to the note", mention_link)
 
-    def reminders():
-        nav("reminders")
+    def reminders_listed():
+        nav("followups")
         expect(page.locator("#items .item", has_text="call the florist")).to_have_count(1)
-        expect(page.locator("#items [data-cal]").first).to_be_visible()
-        expect(page.locator("#items")).to_contain_text("Birthdays")
-        shot("3-reminders")
-    check("reminder appears under Reminders (+ calendar button, birthdays)", reminders)
+        shot("3-followups")
+    check("reminder appears in the Follow-ups tab", reminders_listed)
 
     def manual_person():
-        nav("people"); page.click("#newBtn"); page.fill("#pname", "Lee Park")
+        nav("people"); page.click("[data-act=newPerson]"); page.fill("#pname", "Lee Park")
         page.select_option("[data-pf=bm]", "12"); page.fill("[data-pf=bd]", "25")
         expect(page.locator("#bnote")).to_contain_text(re.compile(r"Birthday (in \d+ days|today|tomorrow)", re.I))
-        with page.expect_download() as d: page.click("#pcal")
+        with page.expect_download() as d: page.click("[data-act=pcal]")
         ics = open(d.value.path()).read()
         assert "RRULE:FREQ=YEARLY" in ics and "Lee Park's birthday" in ics, ics[:200]
-        page.click("#pdel"); expect(page.locator("[data-pid]", has_text="Lee Park")).to_have_count(0)
-        page.click("#tAct"); expect(page.locator("[data-pid]", has_text="Lee Park").first).to_be_visible()
-        page.wait_for_timeout(400); page.reload(); page.wait_for_selector("#items .item")
+        page.click("[data-act=delPerson]"); expect(page.locator("[data-pid]", has_text="Lee Park")).to_have_count(0)
+        page.click("#toast [data-act=toastAct]"); expect(page.locator("[data-pid]", has_text="Lee Park").first).to_be_visible()
+        page.wait_for_timeout(400); page.reload(); page.wait_for_function("window.__recallReady===true")
         assert page.evaluate("S.people.filter(p=>p.name==='Lee Park').length") == 1, "undo did not persist"
     check("add person manually, yearly .ics, delete + undo", manual_person)
 
     def first_name_match():
-        nav("all"); page.click("#newBtn"); page.fill("#ta", "Lee's favorite drink is matcha.")
+        nav("notes"); page.click("[data-act=new]"); page.fill("#ta", "Lee's favorite drink is matcha.")
         page.evaluate("document.activeElement.blur()")
         expect(page.locator("#toast")).to_contain_text("Updated Lee")
         assert page.evaluate("S.people.filter(p=>p.name.startsWith('Lee')).length") == 1
@@ -116,77 +133,111 @@ def run(p, engine, w, h, scheme):
     check("existing person matched by first name", first_name_match)
 
     def persist():
-        page.wait_for_timeout(600)  # let debounced IndexedDB writes land
-        page.reload(); page.wait_for_selector("#items .item")
+        page.wait_for_timeout(600)
+        page.reload(); page.wait_for_function("window.__recallReady===true")
         assert page.evaluate("S.notes.some(n=>n.body.includes('florist'))")
         assert page.evaluate("S.people.some(p=>p.name==='Maya'&&p.birthday&&p.birthday.m===3)")
     check("data survives reload", persist)
 
+    def settings_theme():
+        nav("settings"); expect(page.locator("#page")).to_be_visible(); shot("5-settings")
+        page.click("[data-act=theme][data-v=dark]")
+        assert page.evaluate("document.documentElement.dataset.theme") == "dark"
+        assert page.evaluate("getComputedStyle(document.body).backgroundColor") == "rgb(21, 23, 28)"
+        page.click("[data-act=theme][data-v=light]")
+        assert page.evaluate("getComputedStyle(document.body).backgroundColor") == "rgb(243, 240, 233)"
+        page.click("[data-act=theme][data-v=system]")
+        assert page.evaluate("document.documentElement.hasAttribute('data-theme')") is False
+        page.wait_for_timeout(300); page.reload(); page.wait_for_function("window.__recallReady===true")
+    check("Settings: theme override (light / dark / system)", settings_theme)
+
     def roundtrip():
-        nav("db"); expect(page.locator("#dbview")).to_be_visible(); shot("5-database")
-        with page.expect_download() as d: page.click("#exJson")
+        nav("settings")
+        with page.expect_download() as d: page.click("[data-act=exJson]")
         path = d.value.path(); data = json.load(open(path))
-        assert data["app"] == "recall" and any("florist" in n["body"] for n in data["notes"])
+        assert data["app"] == "recall" and data["version"] == 3 and "settings" in data and any("florist" in n["body"] for n in data["notes"])
         before = page.evaluate("S.notes.length")
         page.evaluate("(async()=>{for(const n of S.notes.filter(n=>n.body.includes('florist'))){S.notes.splice(S.notes.indexOf(n),1);await dbDel(n.id)}})()")
         assert page.evaluate("S.notes.length") == before - 1
         page.set_input_files("#impF", path)
         expect(page.locator("#toast")).to_contain_text("Imported")
         assert page.evaluate("S.notes.length") == before
-        with page.expect_download() as d: page.click("#exCsv")
+        with page.expect_download() as d: page.click("[data-act=exCsv]")
         assert "florist" in open(d.value.path()).read()
-    check("export JSON/CSV then import round-trips", roundtrip)
+    check("export JSON/CSV then import round-trips (Settings > Your data)", roundtrip)
+
+    def v1_import():
+        nav("settings")
+        v1 = {"app": "recall", "version": 2, "notes": [{"id": "old1", "body": "Old v1 note #legacy", "type": "idea", "tags": ["legacy"], "pinned": False,
+              "created": 1700000000000, "updated": 1700000000000, "reminder": None}], "people": []}
+        p = os.path.join(SHOTS, "v1-backup.json"); json.dump(v1, open(p, "w"))
+        page.set_input_files("#impF", p)
+        expect(page.locator("#toast")).to_contain_text("Imported 1 notes")
+        n = page.evaluate("S.notes.find(n=>n.id==='old1')")
+        assert n and n["schemaV"] == 3 and n["type"] == "idea" and n["thread"] == [], n
+    check("importing an older v1 backup upgrades it", v1_import)
 
     def delete_undo():
-        nav("all"); page.locator("#items .item", has_text="call the florist").click()
-        page.click("#del"); expect(page.locator("#items .item", has_text="call the florist")).to_have_count(0)
-        page.click("#tAct"); expect(page.locator("#items .item", has_text="call the florist")).to_have_count(1)
-        page.wait_for_timeout(300); page.reload(); page.wait_for_selector("#items .item")
+        nav("notes"); page.locator("#items .item", has_text="call the florist").click()
+        page.click("[data-act=del]"); expect(page.locator("#items .item", has_text="call the florist")).to_have_count(0)
+        page.click("#toast [data-act=toastAct]"); expect(page.locator("#items .item", has_text="call the florist")).to_have_count(1)
+        page.wait_for_timeout(300); page.reload(); page.wait_for_function("window.__recallReady===true")
         assert page.evaluate("S.notes.some(n=>n.body.includes('florist'))")
     check("delete then undo (and undo persists)", delete_undo)
 
     def capture_fallback():
-        # Simulate iPhone Home Screen app with built-in dictation unavailable.
-        page.evaluate("srBroken=true")
-        nav("all"); page.click("#fab")
+        page.evaluate("srBroken=true")   # simulate an iPhone Home Screen app with built-in dictation unavailable
+        nav("notes"); page.click("#fab")
         expect(page.locator("#ta")).to_be_focused()
         expect(page.locator("#toast")).to_contain_text("Tap the microphone on your keyboard.")
         expect(page.locator("#kbHint")).to_be_visible()
         shot("6-capture-fallback")
-    check("Capture focuses text area; keyboard-mic fallback", capture_fallback)
+    check("Voice button focuses text area; keyboard-mic fallback", capture_fallback)
 
     def links():
-        nav("all"); page.click("#newBtn"); page.fill("#ta", "Trip plan\nPack light.")
-        if mobile: page.click("#back")
-        page.click("#newBtn"); page.fill("#ta", "Packing list\nSee [[Trip plan]] and [[Budget sheet]]")
-        expect(page.locator("#linkBox [data-mention]", has_text="Trip plan")).to_have_count(1)
-        expect(page.locator("#linkBox [data-newlink]")).to_contain_text("Budget sheet")
-        shot("7-links")
-        page.locator("#linkBox [data-mention]", has_text="Trip plan").click()
+        nav("notes"); page.click("[data-act=new]"); page.fill("#ta", "Trip plan\nPack light.")
+        back(); page.click("[data-act=new]"); page.fill("#ta", "Packing list\nSee [[Trip plan]] and [[Budget sheet]]")
+        expect(page.locator("#linkBox [data-act=mention]", has_text="Trip plan")).to_have_count(1)
+        expect(page.locator("#linkBox [data-act=newlink]")).to_contain_text("Budget sheet")
+        page.locator("#linkBox [data-act=mention]", has_text="Trip plan").click()
         expect(page.locator("#ta")).to_have_value("Trip plan\nPack light.")
         expect(page.locator("#linkBox")).to_contain_text("Linked from")
-        expect(page.locator("#linkBox [data-mention]", has_text="Packing list")).to_have_count(1)
-        page.locator("#linkBox [data-mention]", has_text="Packing list").click()
-        page.click("#linkBox [data-newlink]")
+        page.locator("#linkBox [data-act=mention]", has_text="Packing list").click()
+        page.click("#linkBox [data-act=newlink]")
         expect(page.locator("#ta")).to_have_value("Budget sheet\n")
-        assert page.evaluate("S.notes.filter(n=>n.body.startsWith('Budget sheet')).length") == 1
     check("[[links]], backlinks, create-from-link", links)
 
-    def learned():
-        page.evaluate("""(async()=>{const old=newNote('Learned: old lesson about tides');old.created=Date.now()-21*864e5;S.notes.push(old);await dbPut(old)})()""")
-        nav("learning")
-        expect(page.locator("#ltitle")).to_have_text("What I learned")
-        expect(page.locator("#items .grp").first).to_contain_text("This week")
-        expect(page.locator("#items .grp", has_text="Week of")).to_have_count(1)
-        shot("8-learned")
-    check("What I learned grouped by week", learned)
+    def table_view():
+        nav("notes"); collection("all"); page.click("#chips [data-view=db]")
+        expect(page.locator("#page")).to_be_visible(); expect(page.locator("#page tbody tr").first).to_be_visible(); shot("7-table")
+        page.click("#page [data-act=view]"); expect(page.locator("#items")).to_be_visible()
+    check("Table view opens and closes", table_view)
 
     def no_overflow():
-        for v in ["all", "reminders", "people", "db"]:
-            nav(v); page.wait_for_timeout(100)
+        for t in ["notes", "journal", "followups", "people", "settings"]:
+            nav(t); page.wait_for_timeout(100)
             sw = page.evaluate("Math.max(document.documentElement.scrollWidth, document.body.scrollWidth)")
-            assert sw <= w + 1, f"{v}: page is {sw}px wide in a {w}px viewport"
-    check("no horizontal overflow", no_overflow)
+            assert sw <= w + 1, f"{t}: page is {sw}px wide in a {w}px viewport"
+    check("no horizontal overflow on any tab", no_overflow)
+
+    def a11y_names():
+        js = """() => { const vis = e => !!(e.offsetWidth || e.offsetHeight || e.getClientRects().length);
+          const bad = []; document.querySelectorAll('button,[role=button],[role=checkbox],input:not([type=hidden]),select,textarea').forEach(e => {
+            if (!vis(e)) return; const name = (e.getAttribute('aria-label') || e.textContent || e.getAttribute('placeholder') || e.title || '').trim();
+            const lab = e.id && document.querySelector('label[for="' + e.id + '"]'); const wrap = e.closest('label');
+            if (!name && !lab && !wrap && !e.getAttribute('aria-labelledby')) bad.push(e.outerHTML.slice(0, 80)); }); return bad; }"""
+        for t in ["notes", "journal", "followups", "people", "settings"]:
+            nav(t); bad = page.evaluate(js); assert not bad, f"{t}: controls without a name: {bad[:3]}"
+    check("every visible control has an accessible name", a11y_names)
+
+    def touch_targets():
+        if not mobile: return
+        js = """() => [...document.querySelectorAll('button,.chip,.tab,.item,select,input[type=search]')].filter(e => e.offsetWidth && e.offsetHeight)
+                 .map(e => [e, e.getBoundingClientRect()]).filter(([e, r]) => r.height < 43.5 && !e.classList.contains('tagbtn') && !e.closest('.sugg') && !e.closest('table'))
+                 .map(([e, r]) => e.className + ':' + Math.round(r.height))"""
+        for t in ["notes", "followups", "people", "settings"]:
+            nav(t); small = page.evaluate(js); assert not small, f"{t}: targets under 44px: {small[:5]}"
+    check("touch targets are at least 44px (phone)", touch_targets)
 
     def no_console_errors():
         bad = [e for e in errors if "favicon" not in e]
