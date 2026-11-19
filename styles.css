@@ -292,3 +292,6 @@ td.ti{font-weight:600;max-width:20rem;overflow:hidden;text-overflow:ellipsis;whi
 .fu-status .tbtn,.fu-prio .sugg button{min-height:2.75rem}
 .fu-prio .sugg button[aria-pressed="true"]{background:var(--amber);color:var(--charcoal);border-color:var(--amber);font-weight:700}
 .suggest .sugg button{min-height:2.75rem}
+.ci-title{font-family:var(--font-head);font-size:1rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:50%}
+.composer .tbtn{border-radius:1.4rem}
+.updates .bnote b{color:var(--text)}

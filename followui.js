@@ -14,7 +14,7 @@ function fuPart(n){
   const ta=$("#ta");if(ta&&document.activeElement===ta)return "";   // don't interrupt typing
   let h="";
   if(n.fu&&n.fu.state==="open"){
-    h+=`<div class="card fu-status"><div class="row">${ICON.bell}<b>Check back ${esc(fmtWhen(n.fu.at))}</b></div><div class="row"><button class="tbtn" data-act="fuSnz" data-id="${n.id}" data-k="followup">Snooze</button><button class="tbtn" data-act="fuRes" data-id="${n.id}" data-k="followup">Reschedule</button><button class="tbtn" data-act="fuCal">Add to Calendar</button><button class="tbtn" data-act="fuCancel" style="color:var(--danger)">Cancel</button></div></div>`;
+    h+=`<div class="card fu-status"><div class="row">${ICON.bell}<b>Check back ${esc(fmtWhen(n.fu.at))}</b></div><div class="row"><button class="tbtn" data-act="ciStart" data-id="${n.id}" data-kind="followup">Check in now</button><button class="tbtn" data-act="fuSnz" data-id="${n.id}" data-k="followup">Snooze</button><button class="tbtn" data-act="fuRes" data-id="${n.id}" data-k="followup">Reschedule</button><button class="tbtn" data-act="fuCal">Add to Calendar</button><button class="tbtn" data-act="fuCancel" style="color:var(--danger)">Cancel</button></div></div>`;
   }else if(FU.shouldPropose(n)){
     const qs=FU.generateQuestions(n);
     h+=`<div class="suggest" role="group" aria-label="Follow-up suggestion"><h3>${ICON.bell}<span>Want me to check back on this?</span><button class="x" data-act="fuNot" aria-label="Dismiss suggestion">×</button></h3>
@@ -24,7 +24,7 @@ function fuPart(n){
   if(n.type==="idea"&&n.body.trim().length>=12){
     const t=FU.priorityTrend(n.priorityHistory);
     h+=`<div class="card fu-prio" role="group" aria-label="Idea priority"><div class="row sp"><b>How important is this now?</b>${n.priority?`<span class="trend ${t==="rising"?"up":t==="falling"?"down":""}">${t==="rising"?"↑ Rising":t==="falling"?"↓ Falling":t==="steady"?"→ Steady":""}</span>`:""}</div>
-      <div class="sugg">${[1,2,3,4,5].map(v=>`<button data-act="prio" data-v="${v}" aria-pressed="${n.priority===v}" aria-label="${v}, ${prioWords[v]}">${v}</button>`).join("")}</div>${n.priority?`<div class="bnote">${prioWords[n.priority]}. I’ll ask again later so you can see the trend.</div>`:""}</div>`;
+      <div class="sugg">${[1,2,3,4,5].map(v=>`<button data-act="prio" data-v="${v}" aria-pressed="${n.priority===v}" aria-label="${v}, ${prioWords[v]}">${v}</button>`).join("")}</div>${n.priority?`<div class="bnote">${prioWords[n.priority]}. I’ll ask again later so you can see the trend.</div>`:""}<div class="row" style="margin-top:.3rem"><button class="tbtn" data-act="ciStart" data-id="${n.id}" data-kind="interview">Check in on this idea</button></div></div>`;
   }
   return h;
 }
@@ -101,3 +101,49 @@ function checkFollowups(){
     }});
   return changed;
 }
+
+/* ====================================================================== stage 6: check-in threads */
+const hhmm=ms=>new Date(ms).toLocaleTimeString([],{hour:"numeric",minute:"2-digit"});
+const dayLabel=ms=>new Date(ms).toLocaleDateString([],{month:"short",day:"numeric"});
+
+/* Replies are saved on the note as dated updates; show them under the text. */
+function updatesPart(n){
+  if(!FU.eligible(n)||n.type==="journal"||!((n.updates&&n.updates.length)||n.nextStep))return "";
+  return `<div class="card updates" role="group" aria-label="Updates"><b>Updates</b>`+
+    (n.nextStep?`<div class="bnote" style="margin-top:.35rem"><b>Next step:</b> ${esc(n.nextStep)}</div>`:"")+
+    (n.updates||[]).slice().reverse().map(u=>`<div style="margin-top:.45rem"><small style="color:var(--text2)">${esc(dayLabel(u.at))}${u.q?" · "+esc(u.q):""}</small><div style="white-space:pre-wrap">${esc(u.text)}</div></div>`).join("")+`</div>`;
+}
+EXTRA_PARTS.push(updatesPart);
+
+const checkInBtn=(n,e)=>e.kind==="reminder"?"":`<button class="tbtn" data-act="ciStart" data-id="${n.id}" data-kind="${n.type==="idea"?"interview":"followup"}">Check in</button>`;
+
+function startThread(n,kind,opts){
+  if(!n||!FU.eligible(n)){toast("Private entries don’t get check-ins.");return}
+  if(S.listening)stopDictation();
+  const open_=n.ci&&n.ci.stage!=="closed"&&n.ci.kind===kind&&kind!=="question";
+  if(!open_){FU.startCheckIn(n,kind,Date.now(),opts||{});save(n)}
+  S.tab="followups";S.sel=n.id;S.thread=n.id;document.body.classList.remove("v-page");document.body.classList.add("pane-editor");
+  renderAll();
+}
+function renderThread(n){
+  const ed=$("#editor"),th=n.thread||[],last=th[th.length-1],ci=n.ci||{stage:"closed"};
+  const closed=ci.stage==="closed",chips=!closed&&last&&last.from==="recall"&&last.chips?last.chips:[];
+  let prev="";
+  const bubbles=th.map(m=>{const d=dayLabel(m.at),sep=d!==prev?`<div class="bnote" style="text-align:center">${esc(d)}</div>`:"";prev=d;
+    return sep+`<div class="bubble ${m.from}"><span class="sr" style="position:absolute;left:-9999px">${m.from==="me"?"You":"Recall"}: </span>${esc(m.text)}<time datetime="${new Date(m.at).toISOString()}">${esc(hhmm(m.at))}</time></div>`}).join("");
+  ed.innerHTML=`<div class="bar"><button class="back" data-act="ciBack">${ICON.back}Follow-ups</button><b class="ci-title">${esc(titleOf(n))}</b><span style="flex:1"></span><button class="tbtn" data-act="ciNote" style="min-height:2.75rem">View note</button></div>
+    <div class="scroll" id="thScroll"><div class="thread" role="log" aria-live="polite" aria-label="Check-in conversation">${bubbles||`<div class="bnote">No messages yet.</div>`}</div></div>
+    ${chips.length?`<div class="quick" role="group" aria-label="Quick replies">${chips.map(c=>`<button data-act="ciChip" data-c="${esc(c.id)}">${esc(c.label)}</button>`).join("")}</div>`:""}
+    ${closed?`<div class="quick"><button data-act="ciBack">Back to Follow-ups</button></div>`:
+    `<div class="composer"><textarea id="ciIn" rows="1" aria-label="Your reply" placeholder="Type or dictate a reply" spellcheck="true"></textarea><button class="mic" id="mic" data-act="mic" aria-pressed="false">${ICON.mic}Dictate</button><button class="tbtn" data-act="ciSend" style="background:var(--amber);color:var(--charcoal);min-height:2.75rem;padding:0 1.1rem">Send</button></div>`}
+    <div class="live-strip ${S.listening?"on":""}" id="strip" role="status"><i class="dot"></i><span id="interim">Listening…</span></div>`;
+  const sc=$("#thScroll");if(sc)sc.scrollTop=sc.scrollHeight;
+  const ta=$("#ciIn");if(ta)ta.addEventListener("keydown",e=>{if(e.key==="Enter"&&!e.shiftKey){e.preventDefault();ACT.ciSend()}});
+}
+function afterReply(n){save(n);if(S.listening)stopDictation();renderThread(n);refresh(true);if(S.tab==="followups")renderList()}
+ACT.ciStart=el=>startThread(byId(el.dataset.id),el.dataset.kind);
+ACT.fuQ=el=>{const n=byId(S.sel);if(!n)return;const qs=FU.generateQuestions(n);const q=Array.isArray(qs)?qs[+el.dataset.i]:null;if(q)startThread(n,"question",{question:q})};
+ACT.ciChip=el=>{const n=byId(S.thread);if(!n)return;FU.reply(n,{chip:el.dataset.c},Date.now(),{fmt:fmtWhen});afterReply(n)};
+ACT.ciSend=()=>{const n=byId(S.thread),ta=$("#ciIn");if(!n||!ta)return;const t=ta.value.trim();if(!t)return;FU.reply(n,{text:t},Date.now(),{fmt:fmtWhen});afterReply(n)};
+ACT.ciBack=()=>{if(S.listening)stopDictation();S.thread=null;S.sel=null;document.body.classList.remove("pane-editor");renderAll()};
+ACT.ciNote=()=>{if(S.listening)stopDictation();S.thread=null;renderEditor()};

@@ -22,7 +22,7 @@ def check(name, fn):
     try:
         fn(); results.append((name, True, "")); print("  ok  ", name)
     except Exception as e:
-        results.append((name, False, str(e).splitlines()[0][:300])); print("  FAIL", name, "->", str(e).splitlines()[0][:300])
+        msg = (str(e).splitlines() or [repr(e)])[0][:300] + (" | " + " ".join(str(e).splitlines()[1:4])[:400] if os.environ.get("SMOKE_DEBUG") else ""); results.append((name, False, msg)); print("  FAIL", name, "->", msg)
 
 def run(p, engine, w, h, scheme):
     mobile = w < 861
@@ -382,6 +382,46 @@ def run(p, engine, w, h, scheme):
         expect(page.locator(".fu-prio")).to_contain_text("Rising")
         assert page.evaluate("S.notes.find(n=>/pop-up tasting/.test(n.body)).priorityHistory.length") == 2
     check("idea priority: history and rising trend", fu_priority_trend)
+
+    # ------------------------------------------------------------------ stage 6: check-in threads
+    def thread_interview():
+        nav("followups")
+        page.locator("#items .fu", has_text="pop-up tasting").locator("[data-act=ciStart]").click()
+        expect(page.locator(".thread .bubble.recall").first).to_contain_text("How important")
+        page.click("[data-act=ciChip][data-c='p:5']")
+        expect(page.locator(".thread")).to_contain_text("Now 5" if False else "5")
+        expect(page.locator(".thread .bubble.recall").last).to_contain_text("What has changed")
+        page.fill("#ciIn", "Found a caterer who will do tastings"); page.click("[data-act=ciSend]")
+        expect(page.locator(".thread .bubble.recall").last).to_contain_text("next step")
+        page.fill("#ciIn", "Call the caterer Monday"); page.keyboard.press("Enter")
+        expect(page.locator(".thread .bubble.recall").last).to_contain_text("check back")
+        page.click("[data-act=ciChip][data-c='pick:3d']")
+        expect(page.locator(".thread .bubble.recall").last).to_contain_text("check back")
+        n = page.evaluate("(()=>{const n=S.notes.find(n=>/pop-up tasting/.test(n.body));return {p:n.priority,u:n.updates.length,ns:n.nextStep,fu:n.fu.state,th:n.thread.length}})()")
+        assert n["p"] == 5 and n["u"] == 2 and n["ns"] == "Call the caterer Monday" and n["fu"] == "open", n
+        shot("11-thread")
+    check("check-in thread: 3-question interview saves priority, updates, next step, schedules next", thread_interview)
+
+    def thread_voice_and_note():
+        page.click("[data-act=ciNote]")
+        expect(page.locator(".updates")).to_contain_text("Call the caterer Monday")
+        expect(page.locator(".updates")).to_contain_text("Found a caterer")
+        page.evaluate("S.thread=null")
+        page.evaluate("startThread(S.notes.find(n=>/pop-up tasting/.test(n.body)),'followup')")
+        page.evaluate("window.__srNext=null")
+        page.click("#editor #mic"); page.wait_for_timeout(300)
+        expect(page.locator("#ciIn")).to_have_value(re.compile("Hello world"))
+        assert page.evaluate("byId(S.sel).body.includes('Hello world')") is False, "dictation must go to the reply, not the note"
+        page.evaluate("S.listening&&stopDictation()")
+        page.click("[data-act=ciChip][data-c=done]")
+        assert page.evaluate("S.notes.find(n=>/pop-up tasting/.test(n.body)).fu.state") == "done"
+        page.click(".quick [data-act=ciBack]")
+    check("check-in thread: updates shown on the note; voice goes to the reply; Done closes", thread_voice_and_note)
+
+    def thread_private_refused():
+        r = page.evaluate("(()=>{const j=S.notes.find(n=>n.type==='journal'&&!n.shareJournal);return RecallFollowUps.startCheckIn(j,'interview')===null&&!(j.thread&&j.thread.length)})()")
+        assert r is True
+    check("check-in thread: private journal entries are refused", thread_private_refused)
 
     def table_view():
         nav("notes"); collection("all"); page.click("#chips [data-view=db]")

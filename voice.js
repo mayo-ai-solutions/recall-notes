@@ -4,14 +4,16 @@
    which always works. The recognition language comes from RecallLangs.resolve (note, then Settings, then device). */
 const SR=window.SpeechRecognition||window.webkitSpeechRecognition;let rec=null,srBroken=false;
 const KB_HINT="Tap the microphone on your keyboard.";
+/* Dictation goes into the reply box while a check-in thread is open, otherwise into the note. */
+const dictEl=()=>S.thread&&$("#ciIn")?$("#ciIn"):$("#ta");
 const dictLang=()=>{const n=byId(S.sel);return RecallLangs.resolve(n&&n.lang,S.settings.lang,navigator.language)};
 
 function keyboardFallback(){S.listening=false;S.kbHint=true;try{rec&&rec.abort()}catch(_){}rec=null;paintMic();
-  const t=$("#ta");if(t)t.focus();const h=$("#kbHint");if(h)h.hidden=false;toast(KB_HINT,null,6000)}
+  const t=dictEl();if(t)t.focus();const h=$("#kbHint");if(h)h.hidden=false;toast(KB_HINT,null,6000)}
 
 function startDictation(langOverride){
   if(!S.sel)create("");
-  const ta=$("#ta");if(!ta)return;
+  const ta=dictEl();if(!ta)return;
   if(!SR||srBroken){keyboardFallback();return}
   S.dictState=null;
   let heard=false,restarts=0;
@@ -21,7 +23,7 @@ function startDictation(langOverride){
   rec.onstart=()=>{heard=true};
   rec.onresult=e=>{heard=true;restarts=0;let interim="";
     for(let i=e.resultIndex;i<e.results.length;i++){const r=e.results[i],txt=r[0].transcript;
-      if(r.isFinal){appendText(txt);if(typeof onDictated==="function")onDictated({text:txt,confidence:r[0].confidence,lang,override:!!langOverride})}else interim+=txt}
+      if(r.isFinal){appendText(txt);if(typeof onDictated==="function"&&dictEl().id==="ta")onDictated({text:txt,confidence:r[0].confidence,lang,override:!!langOverride})}else interim+=txt}
     S.interim=interim;const el=$("#interim");if(el)el.textContent=interim||"Listening…"};
   rec.onerror=e=>{if(rec!==mine)return;if(e.error==="no-speech"||e.error==="aborted")return;
     if(e.error==="not-allowed"||e.error==="service-not-allowed"||e.error==="audio-capture"||e.error==="network")srBroken=true;
@@ -38,16 +40,17 @@ function stopDictation(){const cur=byId(S.sel);if(cur)setTimeout(()=>extractPeop
 function paintMic(){const m=$("#mic"),s=$("#strip");
   if(m){m.classList.toggle("live",S.listening);m.setAttribute("aria-pressed",S.listening);m.innerHTML=S.listening?ICON.stop+"Stop":ICON.mic+"Dictate"}
   if(s)s.classList.toggle("on",S.listening);const el=$("#interim");if(el)el.textContent="Listening…";paintFab()}
-function appendText(t){const ta=$("#ta");if(!ta)return;t=t.trim();if(!t)return;
+function appendText(t){const ta=dictEl();if(!ta)return;t=t.trim();if(!t)return;
   const cur=ta.value;const needsCap=!cur||/[.!?]\s*$/.test(cur)||/\n$/.test(cur);
   t=t.replace(/\b(new line|newline)\b/gi,"\n").replace(/\bnew paragraph\b/gi,"\n\n");
   if(needsCap)t=t.charAt(0).toUpperCase()+t.slice(1);
-  if(!S.dictState)S.dictState={base:cur,after:cur};
-  ta.value=cur+(cur&&!/\s$/.test(cur)?" ":"")+t;ta.scrollTop=ta.scrollHeight;S.dictState.after=ta.value;onEdit(ta.value)}
+  const main=ta.id==="ta";if(main&&!S.dictState)S.dictState={base:cur,after:cur};
+  ta.value=cur+(cur&&!/\s$/.test(cur)?" ":"")+t;ta.scrollTop=ta.scrollHeight;if(main){S.dictState.after=ta.value;onEdit(ta.value)}}
 
 ACT.mic=()=>{S.listening?stopDictation():startDictation()};
 ACT.fab=()=>{
   if(S.listening){stopDictation();return}
+  if(S.thread&&$("#ciIn")){startDictation();return}
   if(S.tab==="journal")openTodayJournal();else create("");const ta=$("#ta");if(ta)ta.focus();startDictation();
 };
 
